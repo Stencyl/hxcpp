@@ -31,8 +31,6 @@ Defines affecting how the code is compiled.  These can be on the command line wh
 | *HXCPP_GC_DYNAMIC_SIZE* | Monitor GC times and expand memory working space if required |
 | *HXCPP_GC_BIG_BLOCKS*   | Allow working memory greater than 1 Gig |
 | *HXCPP_GC_DEBUG_LEVEL*  | Number 1-4 indicating additional debugging in GC |
-| *HXCPP_VERBOSE*         | Print extra output from build tool. |
-| *HXCPP_NO_COLOR*        | Do not add colour-codes to tool output |
 | *HXCPP_DEBUG_LINK*      | Add symbols to final binary, even in release mode. |
 | *HXCPP_STACK_TRACE*     | Have valid function-level stack traces, even in release mode. |
 | *HXCPP_STACK_LINE*      | Include line information in stack traces, even in release mode. |
@@ -44,6 +42,15 @@ Defines affecting how the code is compiled.  These can be on the command line wh
 | *static_link*           | Generate static library |
 | *dll_link*              | Generate dynamic library |
 
+Other defines:
+| Define                  | Meaning            |
+|-------------------------|--------------------|
+| *HXCPP_VERBOSE*         | Print extra output from build tool. |
+| *HXCPP_TIMES*           | Show some basic profiling information |
+| *HXCPP_NEKO_BUILDTOOL*  | Force use of hxcpp.n, rather than compiled BuildTool.exe
+| *HXCPP_NO_COLOR*        | Do not add colour-codes to tool output |
+
+
 Defines affecting target architecture.
 
 | Define                  | Meaning            |
@@ -54,6 +61,8 @@ Defines affecting target architecture.
 | *HXCPP_ARM64*           | Compile arm-based devices for 64 bits |
 | *HXCPP_ARMV7*           | Compile arm-based devices for armv7 |
 | *HXCPP_ARMV7S*          | Compile arm-based devices for armv7s |
+| *HXCPP_LINUX_ARMV7*     | Run on a linux ARMv7 device |
+| *HXCPP_LINUX_ARM64*     | Run on a linux ARM64 device |
 | *winrt*                 | Compile for windowsRt/windows UWP |
 | *android*               | Compile for android |
 | *PLATFORM*              | Specify the android platform for NDK compilation |
