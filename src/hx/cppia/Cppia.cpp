@@ -7652,7 +7652,8 @@ void CppiaModule::link()
    for(int i=0;i<classes.size();i++)
    {
       linkingClass = classes[i];
-      classes[i]->link();
+	  if(strcmp(linkingClass->name.c_str(),"cpp._Object.Object_Impl_") != 0)
+		classes[i]->link();
    }
    linkingClass = 0;
 
