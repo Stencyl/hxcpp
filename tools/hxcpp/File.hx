@@ -1,6 +1,8 @@
 import sys.FileSystem;
 
-#if cpp
+#if haxe4
+import sys.thread.Mutex;
+#elseif cpp
 import cpp.vm.Mutex;
 #else
 import neko.vm.Mutex;
@@ -18,6 +20,7 @@ class File
    public var mTags:String;
    public var mFilterOut:String;
    public var mEmbedName:String;
+   public var mScramble:String;
    static public var mDependMutex = new Mutex();
 
    public function new(inName:String, inGroup:FileGroup)
@@ -32,6 +35,7 @@ class File
       mDepends = [];
       mCompilerFlags = [];
       mEmbedName = null;
+      mScramble = null;
       mTags = null;
    }
    

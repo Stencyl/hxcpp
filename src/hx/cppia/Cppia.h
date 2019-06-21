@@ -65,6 +65,7 @@ enum ArrayType
    arrBool,
    arrInt,
    arrFloat,
+   arrFloat32,
    arrUnsignedChar,
    arrString,
    arrObject,
@@ -340,6 +341,8 @@ struct TypeData
    HaxeNativeInterface *interfaceBase;
    bool                linked;
    bool                isInterface;
+   bool                isDynamic;
+   bool                isFloat;
    ArrayType           arrayType;
 
    TypeData(String inData);
@@ -387,7 +390,7 @@ public:
    CppiaClassInfo *findClass( ::String inName );
    void registerDebugger();
 
-   inline const char *identStr(int inId) { return strings[inId].__s; }
+   inline const char *identStr(int inId) { return strings[inId].raw_ptr(); }
    inline const char *typeStr(int inId) { return types[inId]->name.c_str(); }
 };
 
@@ -505,11 +508,16 @@ struct CppiaVar
    ExprType         exprType;
 
    CppiaExpr        *init;
+
    Dynamic          objVal;
-   bool             boolVal;
-   int              intVal;
-   Float            floatVal;
+   union {
+      int              boolVal;
+      int              byteVal;
+      int              intVal;
+      Float            floatVal;
+   };
    String           stringVal;
+
    void             *valPointer;
 
 

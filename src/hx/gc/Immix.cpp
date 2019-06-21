@@ -2301,7 +2301,7 @@ void MarkStringArray(String *inPtr, int inLength, hx::MarkContext *__inCtx)
    {
       for(int i=0;i<inLength;i++)
       {
-         const char *str = inPtr[i].__s;
+         const char *str = inPtr[i].raw_ptr();
          HX_MARK_STRING(str);
       }
    }
@@ -2500,6 +2500,12 @@ bool IsWeakRefValid(hx::Object *inPtr)
     return isCurrent;
 }
 
+static void someHackyFunc(hx::Object *)
+{
+}
+
+static void (*hackyFunctionCall)(hx::Object *) = someHackyFunc;
+
 struct Finalizable
 {
    union
@@ -2529,7 +2535,13 @@ struct Finalizable
    void run()
    {
       if (isMember)
-         (((hx::Object *)base)->*member)();
+      {
+         hx::Object *object = (hx::Object *)base;
+         // I can't tell if it is msvc over-optimizing this code, to I am not
+         //  quite calling things right, but this seems to fix it...
+         hackyFunctionCall(object);
+         (object->*member)();
+      }
       else
          alloc( base );
    }
@@ -2792,14 +2804,15 @@ bool IsConstAlloc(const void *inData)
 
 void *InternalCreateConstBuffer(const void *inData,int inSize,bool inAddStringHash)
 {
-   bool addHash = inAddStringHash && inData && inSize>0;
+   bool addHash = inAddStringHash && inSize>0;
 
    int *result = (int *)HxAlloc(inSize + sizeof(int) + (addHash ? sizeof(int):0) );
    if (addHash)
    {
       unsigned int hash = 0;
-      for(int i=0;i<inSize-1;i++)
-         hash = hash*223 + ((unsigned char *)inData)[i];
+      if (inData)
+         for(int i=0;i<inSize-1;i++)
+            hash = hash*223 + ((unsigned char *)inData)[i];
 
       //*((unsigned int *)((char *)result + inSize + sizeof(int))) = hash;
       *result++ = hash;
@@ -4371,6 +4384,8 @@ public:
          #endif
          sgThreadPoolAbort = false;
          sAllThreads = 0;
+         sgThreadPoolJob = tpjNone;
+         sLazyThreads = 0;
       }
    }
 
@@ -4423,6 +4438,8 @@ public:
          #endif
 
          sAllThreads = 0;
+         sgThreadPoolJob = tpjNone;
+         sLazyThreads = 0;
 
          if (sRunningThreads)
          {
@@ -6107,6 +6124,7 @@ void GCPrepareMultiThreaded()
 
 void SetTopOfStack(int *inTop,bool inForce)
 {
+   bool threadAttached = false;
    if (inTop)
    {
       if (!sgAllocInit)
@@ -6117,6 +6135,7 @@ void SetTopOfStack(int *inTop,bool inForce)
          {
             GCPrepareMultiThreaded();
             RegisterCurrentThread(inTop);
+            threadAttached = true;
          }
       }
    }
@@ -6124,7 +6143,11 @@ void SetTopOfStack(int *inTop,bool inForce)
    LocalAllocator *tla = (LocalAllocator *)(hx::ImmixAllocator *)tlsStackContext;
 
    if (tla)
+   {
       tla->SetTopOfStack(inTop,inForce);
+      if (threadAttached)
+         tla->onThreadAttach();
+   }
 }
 
 
@@ -6305,7 +6328,6 @@ void RegisterCurrentThread(void *inTopOfStack)
    #ifdef HXCPP_SCRIPTABLE
    local->byteMarkId = hx::gByteMarkID;
    #endif
-   local->onThreadAttach();
 }
 
 void UnregisterCurrentThread()
@@ -6325,6 +6347,7 @@ void RegisterVTableOffset(int inOffset)
 
 void PushTopOfStack(void *inTop)
 {
+   bool threadAttached = false;
    if (!sgAllocInit)
       InitAlloc();
    else
@@ -6333,11 +6356,14 @@ void PushTopOfStack(void *inTop)
       {
          GCPrepareMultiThreaded();
          RegisterCurrentThread(inTop);
+         threadAttached = true;
       }
    }
  
    LocalAllocator *tla = GetLocalAlloc();
    tla->PushTopOfStack(inTop);
+   if (threadAttached)
+      tla->onThreadAttach();
 }
 
 void PopTopOfStack()
