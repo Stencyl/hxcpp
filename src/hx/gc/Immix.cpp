@@ -22,8 +22,6 @@ int gFastPath = 0;
 int gSlowPath = 0;
 
 
-
-
 }
 
 using hx::gByteMarkID;
@@ -90,7 +88,7 @@ static void *sgObject_root = 0;
 // With virtual inheritance, stack pointers can point to the middle of an object
 #ifdef _MSC_VER
 // MSVC optimizes by taking the address of an initernal data member
-static int sgCheckInternalOffset = sizeof(void *)+sizeof(int);
+static int sgCheckInternalOffset = sizeof(void *)*2;
 static int sgCheckInternalOffsetRows = 1;
 #else
 static int sgCheckInternalOffset = 0;
@@ -798,7 +796,7 @@ struct BlockDataInfo
       memset(mPtr->mRowMarked+IMMIX_HEADER_LINES, 1,IMMIX_USEFUL_LINES); 
       mRanges[0].start = 0;
       mRanges[0].length = 0;
-      mMaxHoleSize = mRanges[0].length;
+      mMaxHoleSize = 0;
       mMoveScore = 0;
       mHoles = 0;
       mZeroed = ZEROED_AUTO;
@@ -938,8 +936,10 @@ struct BlockDataInfo
       mFraggedRows = 0;
       mHoles = 0;
 
-      if (mUsedRows==IMMIX_LINES)
+      if (mUsedRows==IMMIX_USEFUL_LINES)
       {
+         // All rows used - write the block off
+         mMoveScore = 0;
          mZeroed = ZEROED_AUTO;
          mReclaimed = true;
       }
@@ -949,7 +949,7 @@ struct BlockDataInfo
          mReclaimed = false;
       }
 
-      int left = (IMMIX_LINES - mUsedRows) << IMMIX_LINE_BITS;
+      int left = (IMMIX_USEFUL_LINES - mUsedRows) << IMMIX_LINE_BITS;
       if (left<mMaxHoleSize)
          mMaxHoleSize = left;
    }
@@ -1122,7 +1122,7 @@ struct BlockDataInfo
 
 
    // When known to be an actual object start...
-   AllocType GetAllocTypeChecked(int inOffset)
+   AllocType GetAllocTypeChecked(int inOffset, bool allowPrevious)
    {
       char time = mPtr->mRow[0][inOffset+HX_ENDIAN_MARK_ID_BYTE_HEADER];
       if ( ((time+1) & MARK_BYTE_MASK) != (gByteMarkID & MARK_BYTE_MASK)  )
@@ -1130,6 +1130,9 @@ struct BlockDataInfo
          // Object is either out-of-date, or already marked....
          return time==gByteMarkID ? allocMarked : allocNone;
       }
+
+      if (!allowPrevious)
+         return allocNone;
 
       if (*(unsigned int *)(mPtr->mRow[0] + inOffset) & IMMIX_ALLOC_IS_CONTAINER)
       {
@@ -1177,6 +1180,9 @@ struct BlockDataInfo
 
                if (inOffset>=scan && inOffset<end)
                {
+                  if (inOffset>scan+sgCheckInternalOffset)
+                     return allocNone;
+
                   *outPtr = mPtr->mRow[0] + scan + sizeof(int);
 
                   if (header & IMMIX_ALLOC_IS_CONTAINER)
@@ -1201,7 +1207,7 @@ struct BlockDataInfo
 }
    #endif
 
-   AllocType GetAllocType(int inOffset)
+   AllocType GetAllocType(int inOffset,bool inAllowPrevious)
    {
       // Row that the header would be on
       int r = inOffset >> IMMIX_LINE_BITS;
@@ -1223,32 +1229,35 @@ struct BlockDataInfo
          return allocNone;
       }
 
-      return GetAllocTypeChecked(inOffset);
+      return GetAllocTypeChecked(inOffset,inAllowPrevious);
    }
 
-   AllocType GetEnclosingAllocType(int inOffset,void **outPtr)
+   AllocType GetEnclosingAllocType(int inOffset,void **outPtr,bool inAllowPrevious)
    {
       for(int dx=0;dx<=sgCheckInternalOffset;dx+=4)
       {
          int blockOffset = inOffset - dx;
-         int r = blockOffset >> IMMIX_LINE_BITS;
-         if (r >= IMMIX_HEADER_LINES && r < IMMIX_LINES)
+         if (blockOffset >= 0)
          {
-            // Normal, good alloc
-            int rowPos = hx::gImmixStartFlag[blockOffset &127];
-            if ( allocStart[r] & rowPos )
-            {
-               // Found last valid object - is it big enough?
-               unsigned int header =  *(unsigned int *)((char *)mPtr + blockOffset);
-               int size = (header & IMMIX_ALLOC_SIZE_MASK) >> IMMIX_ALLOC_SIZE_SHIFT;
-               // Valid object not big enough...
-               if (blockOffset + size +sizeof(int) <= inOffset )
-                  break;
-
-               *outPtr = (void *)(mPtr->mRow[0] + blockOffset + sizeof(int));
-               return GetAllocTypeChecked(blockOffset);
-            }
-         }
+	         int r = blockOffset >> IMMIX_LINE_BITS;
+	         if (r >= IMMIX_HEADER_LINES && r < IMMIX_LINES)
+	         {
+	            // Normal, good alloc
+	            int rowPos = hx::gImmixStartFlag[blockOffset &127];
+	            if ( allocStart[r] & rowPos )
+	            {
+	               // Found last valid object - is it big enough?
+	               unsigned int header =  *(unsigned int *)((char *)mPtr + blockOffset);
+	               int size = (header & IMMIX_ALLOC_SIZE_MASK) >> IMMIX_ALLOC_SIZE_SHIFT;
+	               // Valid object not big enough...
+	               if (blockOffset + size +sizeof(int) <= inOffset )
+	                  break;
+	
+	               *outPtr = (void *)(mPtr->mRow[0] + blockOffset + sizeof(int));
+	               return GetAllocTypeChecked(blockOffset,inAllowPrevious);
+	            }
+	         }
+	       }
       }
 
       #ifdef HXCPP_GC_NURSERY
@@ -1337,10 +1346,15 @@ bool MostUsedFirst(BlockDataInfo *inA, BlockDataInfo *inB)
    return inA->getUsedRows() > inB->getUsedRows();
 }
 
-//bool BiggestFreeFirst(BlockDataInfo *inA, BlockDataInfo *inB)
-//{
-//   return inA->mMaxHoleSize > inB->mMaxHoleSize;
-//}
+bool BiggestFreeFirst(BlockDataInfo *inA, BlockDataInfo *inB)
+{
+   return inA->mMaxHoleSize > inB->mMaxHoleSize;
+}
+bool SmallestFreeFirst(BlockDataInfo *inA, BlockDataInfo *inB)
+{
+   return inA->mMaxHoleSize < inB->mMaxHoleSize;
+}
+
 
 bool LeastUsedFirst(BlockDataInfo *inA, BlockDataInfo *inB)
 {
@@ -1718,8 +1732,11 @@ class MarkContext
     int       mThreadId;
     MarkChunk *marking;
 
+
 public:
     enum { StackSize = 8192 };
+
+    bool isGenerational;
 
     MarkContext(int inThreadId = -1)
     {
@@ -1729,6 +1746,8 @@ public:
        #endif
        mThreadId = inThreadId;
        marking = sGlobalChunks.alloc();
+
+       isGenerational = false;
     }
     ~MarkContext()
     {
@@ -1738,6 +1757,8 @@ public:
        #endif
        // TODO: Free slabs
     }
+
+
     #ifdef HXCPP_DEBUG
     void PushClass(const char *inClass)
     {
@@ -1748,6 +1769,7 @@ public:
        }
        mPos++;
     }
+
 
     void SetMember(const char *inMember)
     {
@@ -1785,6 +1807,7 @@ public:
        }
     }
     #endif
+
 
     void pushObj(hx::Object *inObject)
     {
@@ -2146,7 +2169,6 @@ void MarkObjectAllocUnchecked(hx::Object *inPtr,hx::MarkContext *__inCtx)
 void MarkObjectArray(hx::Object **inPtr, int inLength, hx::MarkContext *__inCtx)
 {
    hx::Object *tmp;
-   unsigned int mask = gPrevMarkIdMask;
 
    int extra = inLength & 0x0f;
    for(int i=0;i<extra;i++)
@@ -2793,13 +2815,16 @@ void *InternalCreateConstBuffer(const void *inData,int inSize,bool inAddStringHa
    {
       memcpy(result,inData,inSize);
    }
-   else
+   else if (inSize)
    {
       ZERO_MEM(result,inSize);
    }
 
    return result;
 }
+
+// Used when the allocation size is zero for a non-null pointer
+void *emptyAlloc = InternalCreateConstBuffer(0,0,false);
 
 
 } // namespace hx
@@ -3015,6 +3040,7 @@ static int sMinZeroQueueSize = 8;
 static int sMaxZeroQueueSize = 32;
 #endif
 
+#define BLOCK_OFSIZE_COUNT 12
 
 
 class GlobalAllocator
@@ -3024,8 +3050,7 @@ class GlobalAllocator
 public:
    GlobalAllocator()
    {
-      mNextFreeBlock = 0;
-
+      memset((void *)mNextFreeBlockOfSize,0,sizeof(mNextFreeBlockOfSize));
       mRowsInUse = 0;
       mLargeAllocated = 0;
       mLargeAllocSpace = 40 << 20;
@@ -3094,6 +3119,31 @@ public:
       }
    }
 
+   void FreeLarge(void *inLarge)
+   {
+      ((unsigned char *)inLarge)[HX_ENDIAN_MARK_ID_BYTE] = 0;
+      // AllocLarge will not lock this list unless it decides there is a suitable
+      //  value, so we can't doa realloc without potentially crashing it.
+      if (largeObjectRecycle.hasExtraCapacity(1))
+      {
+         unsigned int *blob = ((unsigned int *)inLarge) - 2;
+         unsigned int size = *blob;
+         mLargeListLock.Lock();
+         mLargeAllocated -= size;
+         // Could somehow keep it in the list, but mark as recycled?
+         mLargeList.qerase_val(blob);
+         // We could maybe free anyhow?
+         if (!largeObjectRecycle.hasExtraCapacity(1))
+         {
+            mLargeListLock.Unlock();
+            HxFree(blob);
+            return;
+         }
+         largeObjectRecycle.push(blob);
+         mLargeListLock.Unlock();
+      }
+   }
+
    void *AllocLarge(int inSize, bool inClear)
    {
       if (hx::gPauseForCollect)
@@ -3123,23 +3173,26 @@ public:
       bool isLocked = false;
 
 
-      for(int i=0;i<largeObjectRecycle.size();i++)
+      if (largeObjectRecycle.size())
       {
-         if ( largeObjectRecycle[i][0] == inSize )
+         for(int i=0;i<largeObjectRecycle.size();i++)
          {
-            if (do_lock && !isLocked)
+            if ( largeObjectRecycle[i][0] == inSize )
             {
-               mLargeListLock.Lock();
-               isLocked = true;
-               if ( largeObjectRecycle[i][0] != inSize || i>=largeObjectRecycle.size() )
-                  continue;
-            }
+               if (do_lock && !isLocked)
+               {
+                  mLargeListLock.Lock();
+                  isLocked = true;
+                  if (  i>=largeObjectRecycle.size() || largeObjectRecycle[i][0] != inSize )
+                     continue;
+               }
 
-            result = largeObjectRecycle[i];
-            largeObjectRecycle.qerase(i);
-            // You can use this to test race condition
-            //Sleep(1);
-            break;
+               result = largeObjectRecycle[i];
+               largeObjectRecycle.qerase(i);
+               // You can use this to test race condition
+               //Sleep(1);
+               break;
+            }
          }
       }
 
@@ -3231,14 +3284,19 @@ public:
    BlockDataInfo *GetNextFree(int inRequiredBytes)
    {
       bool failedLock = true;
-      while(failedLock && mNextFreeBlock<mFreeBlocks.size())
+      int sizeSlot = inRequiredBytes>>IMMIX_LINE_BITS;
+      if (sizeSlot>=BLOCK_OFSIZE_COUNT)
+         sizeSlot = BLOCK_OFSIZE_COUNT-1;
+      //volatile int &nextFreeBlock = mNextFreeBlockOfSize[sizeSlot];
+      int nextFreeBlock = mNextFreeBlockOfSize[sizeSlot];
+      while(failedLock && nextFreeBlock<mFreeBlocks.size())
       {
          failedLock = false;
 
-         for(int i=mNextFreeBlock; i<mFreeBlocks.size(); i++)
+         for(int i=nextFreeBlock; i<mFreeBlocks.size(); i++)
          {
              BlockDataInfo *info = mFreeBlocks[i];
-             if (info->mMaxHoleSize>=inRequiredBytes)
+             if (!info->mOwned && info->mMaxHoleSize>=inRequiredBytes)
              {
                 // Acquire the zero-lock
                 if (HxAtomicExchangeIf(0,1,&info->mZeroLock))
@@ -3253,11 +3311,11 @@ public:
                    {
                       info->mOwned = true;
 
-                      // Increase the mNextFreeBlock
-                      int idx = mNextFreeBlock;
+                      // Increase the mNextFreeBlockOfSize
+                      int idx = nextFreeBlock;
                       while(idx<mFreeBlocks.size() && mFreeBlocks[idx]->mOwned)
                       {
-                         HxAtomicExchangeIf(idx,idx+1,&mNextFreeBlock);
+                         HxAtomicExchangeIf(idx,idx+1,mNextFreeBlockOfSize+sizeSlot);
                          idx++;
                       }
 
@@ -3380,6 +3438,7 @@ public:
       gAllocGroups[gid].blocks = n;
       gAllocGroups[gid].clear();
 
+      int newSize = mFreeBlocks.size();
       for(int i=0;i<n;i++)
       {
          BlockData *block = (BlockData *)(aligned + i*IMMIX_BLOCK_SIZE);
@@ -3390,6 +3449,8 @@ public:
       }
       std::stable_sort(&mAllBlocks[0], &mAllBlocks[0] + mAllBlocks.size(), SortByBlockPtr );
       mAllBlocksCount = mAllBlocks.size();
+      for(int i=0;i<BLOCK_OFSIZE_COUNT;i++)
+         mNextFreeBlockOfSize[i] = newSize;
 
       #ifdef HX_GC_VERIFY
       VerifyBlockOrder();
@@ -3419,6 +3480,10 @@ public:
       #endif
    }
 
+   void repoolReclaimedBlock(BlockDataInfo *block)
+   {
+      // The mMaxHoleSize has changed - possibly return to one of the pools
+   }
 
 
    BlockDataInfo *GetFreeBlock(int inRequiredBytes, hx::ImmixAllocator *inAlloc)
@@ -3429,7 +3494,13 @@ public:
          if (result)
          {
             result->zeroAndUnlock();
-            return result;
+
+            // After zero/reclaim, it might be that the hole size is smaller than we thought.
+            if (result->mMaxHoleSize>=inRequiredBytes)
+               return result;
+
+            repoolReclaimedBlock(result);
+            continue;
          }
 
          if (hx::gPauseForCollect)
@@ -3497,7 +3568,11 @@ public:
 
          result->zeroAndUnlock();
 
-         return result;
+         // After zero/reclaim, it might be that the hole size is smaller than we thought.
+         if (result->mMaxHoleSize>=inRequiredBytes)
+            return result;
+
+         repoolReclaimedBlock(result);
       }
   }
 
@@ -4539,7 +4614,7 @@ public:
       else
       {
          #ifdef HX_WATCH
-         GCLOG(" non-gen mark byte -> %02x\n", hx::gByteMarkID);
+         GCLOG(" generational mark byte -> %02x\n", hx::gByteMarkID);
          #endif
          ClearBlockMarks();
       }
@@ -4595,6 +4670,8 @@ public:
       MEM_STAMP(tMarkLocal);
       hx::localCount = 0;
 
+      mMarker.isGenerational = inGenerational;
+
       // Mark local stacks
       for(int i=0;i<mLocalAllocs.size();i++)
          MarkLocalAlloc(mLocalAllocs[i] , &mMarker);
@@ -4617,6 +4694,8 @@ public:
       {
          mMarker.processMarkStack();
       }
+
+
 
       MEM_STAMP(tMarked);
 
@@ -4727,7 +4806,7 @@ public:
       size_t freeFraggedRows = 0; 
       if (inFreeIsFragged)
       {
-         for(int i=mNextFreeBlock; i<mFreeBlocks.size(); i++)
+         for(int i=mNextFreeBlockOfSize[0]; i<mFreeBlocks.size(); i++)
             freeFraggedRows += mFreeBlocks[i]->GetFreeRows();
       }
 
@@ -5264,12 +5343,11 @@ public:
    void createFreeList()
    {
       mFreeBlocks.clear();
-      mNextFreeBlock = 0;
 
       for(int i=0;i<mAllBlocks.size();i++)
       {
          BlockDataInfo *info = mAllBlocks[i];
-         if (info->GetFreeRows() > 0)
+         if (info->GetFreeRows() > 0 && info->mMaxHoleSize>256)
          {
             info->mOwned = false;
             mFreeBlocks.push(info);
@@ -5279,8 +5357,22 @@ public:
       int extra = std::max( mAllBlocks.size(), 8<<IMMIX_BLOCK_GROUP_BITS);
       mFreeBlocks.safeReserveExtra(extra);
 
-      // TODO - is this good or not?
-      std::sort(&mFreeBlocks[0], &mFreeBlocks[0] + mFreeBlocks.size(), MostUsedFirst );
+      std::sort(&mFreeBlocks[0], &mFreeBlocks[0] + mFreeBlocks.size(), SmallestFreeFirst );
+
+      for(int i=0;i<BLOCK_OFSIZE_COUNT;i++)
+         mNextFreeBlockOfSize[i] = mFreeBlocks.size();
+
+      for(int i=mFreeBlocks.size()-1;i>=0;i--)
+      {
+         int slot = mFreeBlocks[i]->mMaxHoleSize >> IMMIX_LINE_BITS;
+         if (slot>=BLOCK_OFSIZE_COUNT)
+            slot = BLOCK_OFSIZE_COUNT-1;
+         mNextFreeBlockOfSize[slot] = i;
+      }
+
+      for(int i=BLOCK_OFSIZE_COUNT-2;i>=0;i--)
+         if (mNextFreeBlockOfSize[i]>mNextFreeBlockOfSize[i+1])
+            mNextFreeBlockOfSize[i] = mNextFreeBlockOfSize[i+1];
 
       mZeroList.clear();
    }
@@ -5392,7 +5484,7 @@ public:
 
    hx::MarkContext mMarker;
 
-   volatile int mNextFreeBlock;
+   volatile int mNextFreeBlockOfSize[BLOCK_OFSIZE_COUNT];
    volatile int mThreadJobId;
 
    BlockList mAllBlocks;
@@ -5447,6 +5539,16 @@ void MarkConservative(int *inBottom, int *inTop,hx::MarkContext *__inCtx)
    void *lastWatch = 0;
    bool isWatch = false;
    #endif
+
+   #ifdef HXCPP_GC_GENERATIONAL
+   // If this is a generational mark, then the byte marker has not been increased.
+   // Previous mark Ids are therfore from more than 1 collection ago
+   bool allowPrevious = !__inCtx->isGenerational;
+   #else
+   const bool allowPrevious = true;
+   #endif
+
+
    for(int *ptr = inBottom ; ptr<inTop; ptr++)
    {
       void *vptr = *(void **)ptr;
@@ -5485,8 +5587,18 @@ void MarkConservative(int *inBottom, int *inTop,hx::MarkContext *__inCtx)
 
                int pos = (int)(((size_t)vptr) & IMMIX_BLOCK_OFFSET_MASK);
                AllocType t = sgCheckInternalOffset ?
-                     info->GetEnclosingAllocType(pos-sizeof(int),&vptr):
-                     info->GetAllocType(pos-sizeof(int));
+                     info->GetEnclosingAllocType(pos-sizeof(int),&vptr, allowPrevious):
+                     info->GetAllocType(pos-sizeof(int), allowPrevious);
+
+               #ifdef HX_WATCH
+               if (!isWatch && hxInWatchList(vptr))
+               {
+                  isWatch = true;
+                  GCLOG("********* Watch location conservative mark offset %p:%d\n",vptr,mem);
+               }
+               #endif
+
+
                if ( t==allocObject )
                {
                   #ifdef HX_WATCH
@@ -5495,7 +5607,7 @@ void MarkConservative(int *inBottom, int *inTop,hx::MarkContext *__inCtx)
                      GCLOG(" Mark object %p (%p)\n", vptr,ptr);
                   }
                   #endif
-                  HX_MARK_OBJECT( ((hx::Object *)vptr) );
+                  hx::MarkObjectAlloc( ((hx::Object *)vptr), __inCtx );
                   lastPin = vptr;
                   info->pin();
                }
@@ -5846,6 +5958,18 @@ public:
       return true;
    }
 
+   bool TryExitGCFreeZone()
+   {
+      #ifndef HXCPP_SINGLE_THREADED_APP
+      if (!mGCFreeZone)
+         return false;
+      ExitGCFreeZone();
+      return true;
+      #endif
+      return false;
+   }
+
+
    void ExitGCFreeZone()
    {
       #ifndef HXCPP_SINGLE_THREADED_APP
@@ -5931,6 +6055,9 @@ public:
          PauseForCollect();
       #endif
 
+      if (inSize==0)
+         return hx::emptyAlloc;
+
       #if defined(HXCPP_VISIT_ALLOCS) && defined(HXCPP_M64)
       // Make sure we can fit a relocation pointer
       int allocSize = sizeof(int) + std::max(8,inSize);
@@ -5968,7 +6095,10 @@ public:
 
                return buffer;
             }
-            *mFraggedRows += (spaceOversize - spaceFirst)>>IMMIX_LINE_BITS;
+            // spaceOversize might have been set to zero for quick-termination of alloc.
+            unsigned char *s = spaceOversize;
+            if (s>spaceFirst)
+               *mFraggedRows += (s - spaceFirst)>>IMMIX_LINE_BITS;
          #else
             int end = spaceStart + allocSize + skip4;
             if (end <= spaceEnd)
@@ -6224,6 +6354,20 @@ bool TryGCFreeZone()
    #endif
 }
 
+bool TryExitGCFreeZone()
+{
+   #ifndef HXCPP_SINGLE_THREADED_APP
+      LocalAllocator *tla = GetLocalAlloc(true);
+      if (!tla)
+         return 0;
+      bool left = tla->TryExitGCFreeZone();
+      return left;
+   #else
+      return false;
+   #endif
+}
+
+
 void ExitGCFreeZone()
 {
    #ifndef HXCPP_SINGLE_THREADED_APP
@@ -6275,6 +6419,7 @@ void GCPrepareMultiThreaded()
 }
 
 
+
 void SetTopOfStack(int *inTop,bool inForce)
 {
    bool threadAttached = false;
@@ -6302,7 +6447,6 @@ void SetTopOfStack(int *inTop,bool inForce)
          tla->onThreadAttach();
    }
 }
-
 
 
 void *InternalNew(int inSize,bool inIsObject)
@@ -6372,6 +6516,9 @@ inline unsigned int ObjectSize(void *inData)
 unsigned int ObjectSizeSafe(void *inData)
 {
    unsigned int header = ((unsigned int *)(inData))[-1];
+   if (header & HX_GC_CONST_ALLOC_BIT)
+      return 0;
+
    #ifdef HXCPP_GC_NURSERY
    if (!(header & 0xff000000))
    {
@@ -6381,6 +6528,7 @@ unsigned int ObjectSizeSafe(void *inData)
       // Large object
    }
    #endif
+
 
    return (header & IMMIX_ALLOC_ROW_COUNT) ?
             ( (header & IMMIX_ALLOC_SIZE_MASK) >> IMMIX_ALLOC_SIZE_SHIFT) :
@@ -6392,11 +6540,29 @@ void GCChangeManagedMemory(int inDelta, const char *inWhy)
    sGlobalAlloc->onMemoryChange(inDelta, inWhy);
 }
 
-
-void *InternalRealloc(void *inData,int inSize, bool inExpand)
+void InternalReleaseMem(void *inMem)
 {
-   if (inData==0)
+   if (inMem)
+   {
+      unsigned int s = ObjectSizeSafe(inMem);
+      if (s>=IMMIX_LARGE_OBJ_SIZE)
+      {
+         //Can release asap
+         sGlobalAlloc->FreeLarge(inMem);
+      }
+   }
+}
+
+
+
+void *InternalRealloc(int inFromSize, void *inData,int inSize, bool inExpand)
+{
+   if (inData==0 || inFromSize==0)
+   {
+      if (inData)
+         InternalReleaseMem(inData);
       return hx::InternalNew(inSize,false);
+   }
 
    HX_STACK_FRAME("GC", "realloc", 0, "GC::relloc", __FILE__ , __LINE__, 0)
 
@@ -6409,15 +6575,16 @@ void *InternalRealloc(void *inData,int inSize, bool inExpand)
    sgAllocsSinceLastSpam++;
    #endif
 
-   unsigned int s = ObjectSizeSafe(inData);
-
    void *new_data = 0;
-
-   if (inSize>=IMMIX_LARGE_OBJ_SIZE)
+   if (inSize==0)
+   {
+      new_data = hx::emptyAlloc;
+   }
+   else if (inSize>=IMMIX_LARGE_OBJ_SIZE)
    {
       new_data = sGlobalAlloc->AllocLarge(inSize, false);
-      if (inSize>s)
-         ZERO_MEM((char *)new_data + s,inSize-s);
+      if (inSize>inFromSize)
+         ZERO_MEM((char *)new_data + inFromSize,inSize-inFromSize);
    }
    else
    {
@@ -6428,12 +6595,13 @@ void *InternalRealloc(void *inData,int inSize, bool inExpand)
           new_data =  tla->CallAlloc(8,0);
       else
       #endif
+      {
+         inSize = (inSize+3) & ~3;
+         if (inExpand)
+            tla->ExpandAlloc(inSize);
 
-      inSize = (inSize+3) & ~3;
-      if (inExpand)
-         tla->ExpandAlloc(inSize);
-
-      new_data = tla->CallAlloc(inSize,0);
+         new_data = tla->CallAlloc(inSize,0);
+      }
    }
 
 
@@ -6442,17 +6610,12 @@ void *InternalRealloc(void *inData,int inSize, bool inExpand)
    __hxt_gc_realloc(inData, new_data, inSize);
 #endif
 
-   int min_size = s < inSize ? s : inSize;
+   int min_size = inFromSize < inSize ? inFromSize : inSize;
 
-   memcpy(new_data, inData, min_size );
+   if (min_size)
+      memcpy(new_data, inData, min_size );
 
-   #ifdef HXCPP_GC_GENERATIONAL
-   if (s>=IMMIX_LARGE_OBJ_SIZE && sGcMode==gcmGenerational)
-   {
-      //Can release asap
-      ((unsigned char *)inData)[HX_ENDIAN_MARK_ID_BYTE] = 0;
-   }
-   #endif
+   InternalReleaseMem(inData);
 
    return new_data;
 }
