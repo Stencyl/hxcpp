@@ -1,3 +1,4 @@
+import sys.io.Process;
 import sys.FileSystem;
 
 class RunMain
@@ -72,6 +73,37 @@ class RunMain
       log("Initial setup complete.");
    }
 
+   public static function createProcess(command:String, args:Array<String>)
+   {
+      var process = new Process(command, args);
+      
+      var waiting = true;
+
+      while (waiting)
+      {
+         try
+         {
+            Sys.println(process.stdout.readLine());
+         }
+         catch (e:haxe.io.Eof)
+         {
+            waiting = false;
+         }
+      }
+
+      var error = process.stderr.readAll().toString();
+      var result = process.exitCode();
+      
+      if (error != "")
+      {
+         Sys.println(error);
+      }
+      
+      process.close();
+      
+      return result;
+   }
+
    public static function run(dir:String, command:String, args:Array<String>)
    {
       var oldDir:String = "";
@@ -80,7 +112,7 @@ class RunMain
          oldDir = Sys.getCwd();
          Sys.setCwd(dir);
       }
-      Sys.command(command,args);
+      createProcess(command,args);
       if (oldDir!="")
          Sys.setCwd(oldDir);
    }
@@ -113,7 +145,7 @@ class RunMain
                }
                else
                {
-                  Sys.exit( Sys.command( compiled, Sys.args() ) );
+                  Sys.exit( createProcess( compiled, Sys.args() ) );
                }
             }
         }

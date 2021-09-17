@@ -20,6 +20,39 @@ class ProcessManager
       return inArgs.copy();
    }
 
+   public static function createProcess(command:String, args:Array<String> = null)
+   {
+      if (args == null) args = [];
+
+      var process = new Process(command, args);
+      
+      var waiting = true;
+
+      while (waiting)
+      {
+         try
+         {
+            Sys.println(process.stdout.readLine());
+         }
+         catch (e:Eof)
+         {
+            waiting = false;
+         }
+      }
+
+      var error = process.stderr.readAll().toString();
+      var result = process.exitCode();
+      
+      if (error != "")
+      {
+         Sys.println(error);
+      }
+      
+      process.close();
+      
+      return result;
+   }
+
    // Command may be a pseudo command, like "xcrun --sdk abc", or 'python "some script"'
    // Here we split the first word into command and move the rest into args, being careful
    //  to preserve quoted words
@@ -261,11 +294,11 @@ class ProcessManager
       
       if (args != null && args.length > 0)
       {
-         result = Sys.command(command, args);
+         result = createProcess(command, args);
       }
       else
       {
-         result = Sys.command(command);
+         result = createProcess(command);
       }
       
       if (oldPath != "")

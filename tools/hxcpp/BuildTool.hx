@@ -1564,7 +1564,7 @@ class BuildTool
             exe = '"$exe"';
          #end
 
-         Tools.exit( Sys.command( exe, args ) );
+         Tools.exit( ProcessManager.createProcess( exe, args ) );
       }
       else if (args.length>0 && args[0].endsWith(".js"))
       {
@@ -1576,7 +1576,7 @@ class BuildTool
             node = "node";
 
          Log.v(  node + " " + args.join(" ") );
-         Tools.exit( Sys.command( node, args ) );
+         Tools.exit( ProcessManager.createProcess( node, args ) );
       }
       else if (args.length==1 && args[0]=="defines")
       {
