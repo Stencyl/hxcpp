@@ -2037,7 +2037,8 @@ class BuildTool
       }
       else if ( (new EReg("mac","i")).match(os) )
       {
-         set64(defines,m64);
+         var isArm64 = defines.exists("HXCPP_ARM64");
+         set64(defines,m64,isArm64);
          // Cross-compile?
          if (defines.exists("linux"))
          {
@@ -2052,7 +2053,7 @@ class BuildTool
             defines.set("toolchain","mac");
             defines.set("macos","macos");
             defines.set("apple","apple");
-            defines.set("BINDIR",m64 ? "Mac64":"Mac");
+            defines.set("BINDIR",isArm64 ? "Mac-arm64" : m64 ? "Mac64":"Mac");
          }
       }
    }

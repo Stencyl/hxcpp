@@ -12,7 +12,6 @@
 <!-- You can override the exes an "exe" section on your own .hxcpp_config -->
 <!-- You can use replace="1" to change the compiler, or omit to add flags -->
 
-<!-- Library files & targets -------------------------------------->
 
 <files id="cffi-depends">
   <depend name="${HXCPP}/include/hx/CFFI.h"/>
@@ -68,7 +67,9 @@
   </section>
 </files>
  
-
+<echo value="is arm64" if="HXCPP_ARM64" />
+<echo value="is m64" if="HXCPP_M64" />
+<echo value="is m32" if="HXCPP_M32" />
 
 <!-- Additional dependencies for haxe target -->
 <files id="haxe">

@@ -1,5 +1,4 @@
 <xml>
-<!-- MACOS TOOLS -------------------------------------------------->
 
 <set name="HXCPP_USE_LIBTOOL" value="1" />
 <set name="HXCPP_CPP11" value="1" unless="HXCPP_NO_CPP11" />
@@ -13,6 +12,13 @@
 
 <set name="STDLIBCPP" value="1" unless="HXCPP_GCC || HXCPP_CPP11" />
 
+<echo value="is arm64" if="HXCPP_ARM64" />
+<echo value="is m64" if="HXCPP_M64" />
+<echo value="is m32" if="HXCPP_M32" />
+<set name="HXCPP_MAC_ARCH" value="arm64" if="HXCPP_ARM64" />
+<set name="HXCPP_MAC_ARCH" value="i386" unless="HXCPP_M64||HXCPP_ARM64" />
+<set name="HXCPP_MAC_ARCH" value="x86_64" if="HXCPP_M64" unless="HXCPP_ARM64" />
+<echo value="HXCPP_MAC_ARCH: ${HXCPP_MAC_ARCH}" />
 
 <compiler id="darwin" exe="g++" if="macos">
   <exe name="xcrun --sdk macosx${MACOSX_VER} clang++" if="HXCPP_CLANG" />
@@ -31,8 +37,8 @@
   <flag value="-O2" unless="debug"/>
   <flag value="-I${HXCPP}/include"/>
   <flag value="-DHX_MACOS"/>
-  <flag value="-m32" unless="HXCPP_M64"/>
-  <flag value="-m64" if="HXCPP_M64"/>
+  <flag value="-target" />
+  <flag value="${HXCPP_MAC_ARCH}-apple-darwin${MACOSX_DEPLOYMENT_TARGET}" />
   <flag value="-DHXCPP_BIG_ENDIAN" if="HXCPP_BIG_ENDIAN"/>
   <flag value="-Wno-parentheses" />
   <flag value="-Wno-null-dereference" if="HXCPP_CLANG"/>
@@ -65,8 +71,8 @@
   <flag value="-fpic"/>
   <flag value="-fPIC"/>
   <flag value="-dynamiclib"/>
-  <flag value="-m32" unless="HXCPP_M64"/>
-  <flag value="-m64" if="HXCPP_M64"/>
+  <flag value="-target" />
+  <flag value="${HXCPP_MAC_ARCH}-apple-darwin${MACOSX_DEPLOYMENT_TARGET}" />
   <flag value="-framework"/>
   <flag value="Cocoa"/>
   <flag value="-isysroot" unless="LEGACY_MACOSX_SDK"/>
@@ -88,8 +94,8 @@
   <flag value="-isysroot" unless="LEGACY_MACOSX_SDK"/>
   <flag value="${DEVELOPER_DIR}/Platforms/MacOSX.platform/Developer/SDKs/MacOSX${MACOSX_VER}.sdk" unless="LEGACY_MACOSX_SDK"/>
   <!-- <flag value="-debug" if="debug"/> -->
-  <flag value="-m32" unless="HXCPP_M64"/>
-  <flag value="-m64" if="HXCPP_M64"/>
+  <flag value="-target" />
+  <flag value="${HXCPP_MAC_ARCH}-apple-darwin${MACOSX_DEPLOYMENT_TARGET}" />
   <ext value=""/>
   <outflag value="-o "/>
 </linker>

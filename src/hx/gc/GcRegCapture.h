@@ -1,7 +1,7 @@
 #ifndef HX_GC_HELPERS_INCLUDED
 #define HX_GC_HELPERS_INCLUDED
 
-#if defined(HX_WINDOWS) && defined(HXCPP_ARM64)
+#if (defined(HX_WINDOWS) || defined(HX_MACOS)) && defined(HXCPP_ARM64)
 #define HXCPP_CAPTURE_SETJMP
 #endif
 

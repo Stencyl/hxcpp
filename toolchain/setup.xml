@@ -3,6 +3,10 @@
    <!-- You can override this file to setup your own toolchain. 
         You should peobably include thie following line -->
 
+        <echo value="is arm64" if="HXCPP_ARM64" />
+<echo value="is m64" if="HXCPP_M64" />
+<echo value="is m32" if="HXCPP_M32" />
+
    <include name="${HXCPP_CONFIG}" section="vars" noerror="1"/>
  
    <section if="EMCC_CORES">

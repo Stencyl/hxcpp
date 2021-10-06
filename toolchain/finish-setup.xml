@@ -37,15 +37,15 @@
 <set name="STD_MODULE_LINK" value="exe" if="HXCPP_JS_PRIME"/>
 
 
-
-<set name="LIBEXTRA" value=".iphonesim-64" if="iphonesim"/>
-<set name="LIBEXTRA" value=".iphonesim" if="iphonesim" unless="HXCPP_M64"/>
+<set name="LIBEXTRA" value=".iphonesim-arm64" if="iphonesim HXCPP_ARM64"/>
+<set name="LIBEXTRA" value=".iphonesim-x86_64" if="iphonesim HXCPP_M64" unless="HXCPP_ARM64"/>
+<set name="LIBEXTRA" value=".iphonesim-i386" if="iphonesim" unless="HXCPP_M64||HXCPP_ARM64"/>
 <section if="iphoneos">
-	<set name="LIBEXTRA" value=".iphoneos-v7" if="HXCPP_ARMV7"/>
-	<set name="LIBEXTRA" value=".iphoneos-v7s" if="HXCPP_ARMV7S"/>
-	<set name="LIBEXTRA" value=".iphoneos-64" if="HXCPP_ARM64"/>
+	<set name="LIBEXTRA" value=".iphoneos-armv7" if="HXCPP_ARMV7"/>
+	<set name="LIBEXTRA" value=".iphoneos-armv7s" if="HXCPP_ARMV7S"/>
+	<set name="LIBEXTRA" value=".iphoneos-arm64" if="HXCPP_ARM64"/>
 	<set name="HXCPP_ARMV6" value="1" unless="LIBEXTRA"/>
-	<set name="LIBEXTRA" value=".iphoneos" if = "HXCPP_ARMV6"/>
+	<set name="LIBEXTRA" value=".iphoneos-armv6" if = "HXCPP_ARMV6"/>
 </section>
 <set name="LIBEXTRA" value=".appletvsim-64" if="appletvsim"/>
 <set name="LIBEXTRA" value=".appletvsim" if="appletvsim" unless="HXCPP_M64"/>
@@ -59,7 +59,7 @@
 <set name="LIBEXTRA" value="-x86" if="HXCPP_X86" />
 <set name="LIBEXTRA" value="-x86_64" if="HXCPP_X86_64" />
 <set name="LIBEXTRA" value="-v7" if="HXCPP_ARMV7" unless="LIBEXTRA||linux" />
-<set name="LIBEXTRA" value="-64" if="HXCPP_ARM64" unless="LIBEXTRA||linux||isMsvc" />
+<set name="LIBEXTRA" value="-64" if="HXCPP_ARM64" unless="LIBEXTRA||mac||linux||isMsvc" />
 <set name="LIBEXTRA" value="-x86" if="tizen"/>
 <set name="LIBEXTRA" value="" if="tizen" unless="simulator" />
 <set name="LIBEXT" value=".a" />
