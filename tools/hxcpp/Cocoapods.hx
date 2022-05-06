@@ -165,7 +165,7 @@ class Cocoapods
       return cocoapods.get(name);
    }
 
-   public static function getCocoapodVendoredFramework(cocoapod:String, version:String, framework:String, clearCache:Bool = false):String
+   public static function getCocoapodVendoredFramework(cocoapod:String, version:String, framework:String, defines:Hash<String>, clearCache:Bool = false):String
    {
       var cocoapodInfo = getCocoapod(cocoapod, version, clearCache);
       if (cocoapodInfo != null)
@@ -179,7 +179,23 @@ class Cocoapods
          }
 
          var podSpec = haxe.Json.parse(podSpecContents);
-         for (frameworkPath in (podSpec.vendored_frameworks : Array<String>))
+         var platform = getDefinedPlatform(defines);
+         var platformFields = Reflect.field(podSpec, platform);
+         if (platformFields == null && platform == "macos")
+         {
+            platformFields = podSpec.osx;
+         }
+         if (platformFields != null)
+         {
+            for (frameworkPath in getJsonStrings(platformFields, "vendored_frameworks"))
+            {
+               if (Path.withoutExtension(Path.withoutDirectory(frameworkPath)) == framework)
+               {
+                  return '${cocoapodInfo.podPath}/$frameworkPath';
+               }
+            }
+         }
+         for (frameworkPath in getJsonStrings(podSpec, "vendored_frameworks"))
          {
             if (Path.withoutExtension(Path.withoutDirectory(frameworkPath)) == framework)
             {
@@ -189,6 +205,26 @@ class Cocoapods
       }
       
       Log.error("Could not find vendored framework \"" + framework + "\" in cocoapod \"" + cocoapod + "\"");
+      return "";
+   }
+
+   private static function getJsonStrings(obj:Dynamic, key:String):Array<String>
+   {
+      if(!Reflect.hasField(obj, key))
+         return [];
+      var field:Dynamic = Reflect.field(obj, key);
+      if(#if (haxe_ver >= 4.2) Std.isOfType #else Std.is #end (field, String))
+         return [(field : String)];
+      return (field : Array<String>);
+   }
+
+   public static function getDefinedPlatform(defines:Hash<String>):String
+   {
+      if(defines.exists("ios")) return "ios";
+      if(defines.exists("macos")) return "macos";
+      if(defines.exists("tvos")) return "tvos";
+      if(defines.exists("watchos")) return "watchos";
+      Log.error("Unknown platform (expected ios, macos, tvos, watchos).");
       return "";
    }
 
@@ -229,7 +265,7 @@ class Cocoapods
       if (parts.length > (nextPart + 1) && parts[nextPart] == "frameworks")
       {
          ++nextPart;
-         toReturn = getCocoapodVendoredFramework(pod, version, parts[nextPart]);
+         toReturn = getCocoapodVendoredFramework(pod, version, parts[nextPart], defines);
          ++nextPart;
 
          if (parts.length > nextPart && parts[nextPart] == "active_slice")
