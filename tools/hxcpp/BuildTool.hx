@@ -2297,6 +2297,9 @@ class BuildTool
                case "pragma" :
                   if (el.has.once)
                      mPragmaOnce.set(mCurrentIncludeFile, parseBool(substitute(el.att.once)));
+
+               case "cocoapod" :
+                  Cocoapods.setCocoapodVersion(el.att.name, el.att.version);
             }
          }
       }
@@ -2411,6 +2414,10 @@ class BuildTool
          {
             sub = PathManager.getHaxelib(sub.substr(8));
             sub = PathManager.standardize(sub);
+         }
+         else if (sub.startsWith("cocoapod:"))
+         {
+            sub = Cocoapods.resolveCocoapodPathRequest(sub.substr(9), mDefines);
          }
          else if (sub.startsWith("removeQuotes:"))
          {
