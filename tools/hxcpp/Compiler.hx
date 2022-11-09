@@ -330,6 +330,10 @@ class Compiler
                //Log.info(""," copy cache for " + obj_name );
                if (!useCacheInPlace)
                   sys.io.File.copy(cacheName, obj_name);
+               else if(System.touch(obj_name) != 0)
+               {
+                  Log.info("failed to touch " + obj_name);
+               }
                found = true;
             }
          }
