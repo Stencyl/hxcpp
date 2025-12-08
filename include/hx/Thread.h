@@ -19,8 +19,13 @@
 
 #elif defined(_WIN32)
 
+#ifdef HXCPP_WINXP_COMPAT
 #undef _WIN32_WINNT
 #define _WIN32_WINNT 0x0400
+#else
+#undef _WIN32_WINNT
+#define _WIN32_WINNT 0x0600
+#endif
 
 #include <windows.h>
 #include <process.h>
@@ -35,115 +40,6 @@
 #ifdef RegisterClass
 #undef RegisterClass
 #endif
-
-#if defined(ANDROID)
-
-#if (HXCPP_ANDROID_PLATFORM>=16)
-// Nice one, google, no one was using that.
-#define __ATOMIC_INLINE__ static __inline__ __attribute__((always_inline))
-// returns 0=exchange took place, 1=not
-__ATOMIC_INLINE__ int __atomic_cmpxchg(int old, int _new, volatile int *ptr)
-   { return __sync_val_compare_and_swap(ptr, old, _new) != old; }
-__ATOMIC_INLINE__ int __atomic_dec(volatile int *ptr) { return __sync_fetch_and_sub (ptr, 1); }
-__ATOMIC_INLINE__ int __atomic_inc(volatile int *ptr) { return __sync_fetch_and_add (ptr, 1); }
-#else
-#include <sys/atomics.h>
-#endif
-
-// returns 1 if exchange took place
-inline bool HxAtomicExchangeIf(int inTest, int inNewVal,volatile int *ioWhere)
-   { return !__atomic_cmpxchg(inTest, inNewVal, ioWhere); }
-inline bool HxAtomicExchangeIfPtr(void *inTest, void *inNewVal,void * volatile *ioWhere)
-   { return __sync_val_compare_and_swap(ioWhere, inTest, inNewVal)==inTest; }
-
-// Returns old value naturally
-inline int HxAtomicInc(volatile int *ioWhere)
-   { return __atomic_inc(ioWhere); }
-inline int HxAtomicDec(volatile int *ioWhere)
-   { return __atomic_dec(ioWhere); }
-
-#elif defined(HX_WINDOWS)
-
-inline bool HxAtomicExchangeIf(int inTest, int inNewVal,volatile int *ioWhere)
-   { return InterlockedCompareExchange((volatile LONG *)ioWhere, inNewVal, inTest)==inTest; }
-
-inline bool HxAtomicExchangeIfPtr(void *inTest, void *inNewVal,void *volatile *ioWhere)
-   { return InterlockedCompareExchangePointer(ioWhere, inNewVal, inTest)==inTest; }
-
-// Make it return old value
-inline int HxAtomicInc(volatile int *ioWhere)
-   { return InterlockedIncrement((volatile LONG *)ioWhere)-1; }
-inline int HxAtomicDec(volatile int *ioWhere)
-   { return InterlockedDecrement((volatile LONG *)ioWhere)+1; }
-
-#define HX_HAS_ATOMIC 1
-
-#elif defined(HX_MACOS) || defined(IPHONE) || defined(APPLETV)
-#include <libkern/OSAtomic.h>
-
-#define HX_HAS_ATOMIC 1
-
-inline bool HxAtomicExchangeIf(int inTest, int inNewVal,volatile int *ioWhere)
-   { return OSAtomicCompareAndSwap32Barrier(inTest, inNewVal, ioWhere); }
-inline bool HxAtomicExchangeIfPtr(void *inTest, void *inNewVal,void * volatile *ioWhere)
-   { return OSAtomicCompareAndSwapPtrBarrier(inTest, inNewVal, ioWhere); }
-inline int HxAtomicInc(volatile int *ioWhere)
-   { return OSAtomicIncrement32Barrier(ioWhere)-1; }
-inline int HxAtomicDec(volatile int *ioWhere)
-   { return OSAtomicDecrement32Barrier(ioWhere)+1; }
-
-
-#elif defined(HX_LINUX)
-
-#define HX_HAS_ATOMIC 1
-
-inline bool HxAtomicExchangeIf(int inTest, int inNewVal,volatile int *ioWhere)
-   { return __sync_bool_compare_and_swap(ioWhere, inTest, inNewVal); }
-inline bool HxAtomicExchangeIfPtr(void *inTest, void *inNewVal,void *volatile *ioWhere)
-   { return __sync_bool_compare_and_swap(ioWhere, inTest, inNewVal); }
-// Returns old value naturally
-inline int HxAtomicInc(volatile int *ioWhere)
-   { return __sync_fetch_and_add(ioWhere,1); }
-inline int HxAtomicDec(volatile int *ioWhere)
-   { return __sync_fetch_and_sub(ioWhere,1); }
-
-#else
-
-#define HX_HAS_ATOMIC 0
-
-inline bool HxAtomicExchangeIfPtr(void *inTest, void *inNewVal,void *volatile *ioWhere)
-{
-   if (*ioWhere == inTest)
-   {
-      *ioWhere = inNewVal;
-      return true;
-   }
-   return false;
-}
-
-
-inline int HxAtomicExchangeIf(int inTest, int inNewVal,volatile int *ioWhere)
-{
-   if (*ioWhere == inTest)
-   {
-      *ioWhere = inNewVal;
-      return true;
-   }
-   return false;
-}
-inline int HxAtomicInc(volatile int *ioWhere)
-   { return (*ioWhere)++; }
-inline int HxAtomicDec(volatile int *ioWhere)
-   { return (*ioWhere)--; }
-
-
-#endif
-
-inline bool HxAtomicExchangeIfCastPtr(void *inTest, void *inNewVal,void *ioWhere)
-{
-   return HxAtomicExchangeIfPtr(inTest, inNewVal, (void *volatile *)ioWhere);
-}
-
 
 #if defined(HX_WINDOWS)
 
@@ -190,27 +86,38 @@ inline bool HxCreateDetachedThread(DWORD (WINAPI *func)(void *), void *param)
 
 struct HxMutex
 {
+   bool mValid;
+   pthread_mutex_t *mMutex;
+
    HxMutex()
    {
       pthread_mutexattr_t mta;
       pthread_mutexattr_init(&mta);
       pthread_mutexattr_settype(&mta, PTHREAD_MUTEX_RECURSIVE);
-      mValid = pthread_mutex_init(&mMutex,&mta) ==0;
+      mMutex = new pthread_mutex_t();
+      mValid = pthread_mutex_init(mMutex,&mta) ==0;
    }
-   ~HxMutex() { if (mValid) pthread_mutex_destroy(&mMutex); }
-   void Lock() { pthread_mutex_lock(&mMutex); }
-   void Unlock() { pthread_mutex_unlock(&mMutex); }
-   bool TryLock() { return !pthread_mutex_trylock(&mMutex); }
+   ~HxMutex()
+   {
+      Clean();
+   }
+   void Lock() { pthread_mutex_lock(mMutex); }
+   void Unlock() { pthread_mutex_unlock(mMutex); }
+   bool TryLock() { return !pthread_mutex_trylock(mMutex); }
    bool IsValid() { return mValid; }
    void Clean()
    {
       if (mValid)
-         pthread_mutex_destroy(&mMutex);
-      mValid = 0;
+      {
+         pthread_mutex_destroy(mMutex);
+         mValid = false;
+      }
+      if (mMutex)
+      {
+         delete mMutex;
+         mMutex = nullptr;
+      }
    }
-
-   bool mValid;
-   pthread_mutex_t mMutex;
 };
 
 #define THREAD_FUNC_TYPE void *
@@ -296,18 +203,20 @@ struct HxSemaphore
 
 struct HxSemaphore
 {
+   HxMutex         mMutex;
+   pthread_cond_t  *mCondition;
+   bool            mSet;
+
+
    HxSemaphore()
    {
       mSet = false;
-      mValid = true;
-      pthread_cond_init(&mCondition,0);
+      mCondition = new pthread_cond_t();
+      pthread_cond_init(mCondition,0);
    }
    ~HxSemaphore()
    {
-      if (mValid)
-      {
-         pthread_cond_destroy(&mCondition);
-      }
+      Clean();
    }
    // For autolock
    inline operator HxMutex &() { return mMutex; }
@@ -317,13 +226,13 @@ struct HxSemaphore
       if (!mSet)
       {
          mSet = true;
-         pthread_cond_signal( &mCondition );
+         pthread_cond_signal( mCondition );
       }
    }
    void QSet()
    {
       mSet = true;
-      pthread_cond_signal( &mCondition );
+      pthread_cond_signal( mCondition );
    }
    void Reset()
    {
@@ -335,14 +244,14 @@ struct HxSemaphore
    {
       AutoLock lock(mMutex);
       while( !mSet )
-         pthread_cond_wait( &mCondition, &mMutex.mMutex );
+         pthread_cond_wait( mCondition, mMutex.mMutex );
       mSet = false;
    }
    // when we already hold the mMutex lock ...
    void QWait()
    {
       while( !mSet )
-         pthread_cond_wait( &mCondition, &mMutex.mMutex );
+         pthread_cond_wait( mCondition, mMutex.mMutex );
       mSet = false;
    }
    // Returns true if the wait was success, false on timeout.
@@ -366,7 +275,7 @@ struct HxSemaphore
 
       int result = 0;
       // Wait for set to be true...
-      while( !mSet &&  (result=pthread_cond_timedwait( &mCondition, &mMutex.mMutex, &spec )) != ETIMEDOUT)
+      while( !mSet &&  (result=pthread_cond_timedwait( mCondition, mMutex.mMutex, &spec )) != ETIMEDOUT)
       {
          if (result!=0)
          {
@@ -391,18 +300,14 @@ struct HxSemaphore
    void Clean()
    {
       mMutex.Clean();
-      if (mValid)
+      if (mCondition)
       {
-         mValid = false;
-         pthread_cond_destroy(&mCondition);
+         pthread_cond_destroy(mCondition);
+         delete mCondition;
+         mCondition = nullptr;
       }
    }
 
-
-   HxMutex         mMutex;
-   pthread_cond_t  mCondition;
-   bool            mSet;
-   bool            mValid;
 };
 
 

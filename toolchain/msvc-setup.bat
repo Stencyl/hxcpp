@@ -20,7 +20,7 @@ if exist "%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" (
 		@set
 		exit
 	) else (
-		echo Warning: Could not find Visual Studio 2017 VsDevCmd
+		echo Warning: Could not find Visual Studio VsDevCmd
 	)
 )
 @if exist "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\Common7\Tools\VsDevCmd.bat" (

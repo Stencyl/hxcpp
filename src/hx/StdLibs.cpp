@@ -194,26 +194,32 @@ Array<unsigned char> __hxcpp_resource_bytes(String inName)
 
 // -- hx::Native -------
 
-#if HXCPP_API_LEVEL >= 330
 extern "C" void __hxcpp_lib_main();
 namespace hx
 {
-   const char *Init()
+   static std::string initReturnBuffer;
+   const char *Init(bool stayAttached)
    {
       try
       {
          __hxcpp_lib_main();
+         if (!stayAttached)
+            SetTopOfStack(0,true);
          return 0;
       }
       catch(Dynamic e)
       {
          HX_TOP_OF_STACK
+         if (!stayAttached)
+         {
+            initReturnBuffer = e->toString().utf8_str();
+            SetTopOfStack(0,true);
+            return initReturnBuffer.c_str();
+         }
          return e->toString().utf8_str();
       }
    }
 }
-#endif
-
 
 // --- System ---------------------------------------------------------------------
 
@@ -236,8 +242,17 @@ int __hxcpp_irand(int inMax)
    return (lo | (mid<<12) | (hi<<24) ) % inMax;
 }
 
+#ifdef HX_WINDOWS
+LARGE_INTEGER qpcFrequency;
+#endif
+
 void __hxcpp_stdlibs_boot()
 {
+#ifdef HX_WINDOWS
+    // MSDN states that QueryPerformanceFrequency will always succeed on XP and above, so I'm ignoring the result.
+    QueryPerformanceFrequency(&qpcFrequency);
+#endif
+
    #if defined(_MSC_VER) && !defined(HX_WINRT)
    HMODULE kernel32 = LoadLibraryA("kernel32");
    if (kernel32)
@@ -276,7 +291,7 @@ void __hxcpp_stdlibs_boot()
    //  It does not cause fread to return immediately - as perhaps desired.
    //  But it does cause some new-line characters to be lost.
    //setbuf(stdin, 0);
-   setbuf(stdout, 0);
+   setvbuf(stdout, NULL, _IOLBF, BUFSIZ);
    setbuf(stderr, 0);
 }
 
@@ -301,7 +316,7 @@ void __trace(Dynamic inObj, Dynamic info)
       //PRINTF("%s:%d: %s\n", filename, line, text.raw_ptr() ? text.out_str(&convertBuf) : "null");
       PRINTF("%s:%d: %s\n", filename, line, text.raw_ptr() ? text.out_str(&convertBuf) : "null");
    }
-
+   fflush(stdout);
 }
 
 void __hxcpp_exit(int inExitCode)
@@ -321,10 +336,7 @@ double  __time_stamp()
       if (t0==0)
       {
          t0 = now;
-         __int64 freq;
-         QueryPerformanceFrequency((LARGE_INTEGER*)&freq);
-         if (freq!=0)
-            period = 1.0/freq;
+         period = 1.0/qpcFrequency.QuadPart;
       }
       if (period!=0)
          return (now-t0)*period;
@@ -343,6 +355,26 @@ double  __time_stamp()
 #endif
 }
 
+::cpp::Int64 __time_stamp_ms()
+{
+#ifdef HX_WINDOWS
+    // MSDN states that QueryPerformanceCounter will always succeed on XP and above, so I'm ignoring the result.
+    auto now = LARGE_INTEGER{ 0 };
+    QueryPerformanceCounter(&now);
+
+    return now.QuadPart * LONGLONG{ 1000 } / qpcFrequency.QuadPart;
+#else
+    auto time = timespec();
+
+    if (clock_gettime(CLOCK_MONOTONIC, &time))
+    {
+        throw ::Dynamic(HX_CSTRING("Failed to get the monotonic clock time"));
+    }
+
+    return time.tv_sec * 1000 + (time.tv_nsec / 1000000);
+#endif
+}
+
 #if defined(HX_WINDOWS) && !defined(HX_WINRT)
 
 /*
@@ -357,7 +389,7 @@ https://github.com/dotnet/coreclr/blob/master/src/vm/util.cpp
 
 #define ISWHITE(x) ((x)==(' ') || (x)==('\t') || (x)==('\n') || (x)==('\r') )
 
-static void ParseCommandLine(LPTSTR psrc, Array<String> &out)
+static void ParseCommandLine(LPWSTR psrc, Array<String> &out)
 {
     unsigned int argcount = 1;       // discovery of arg0 is unconditional, below
 
@@ -379,7 +411,7 @@ static void ParseCommandLine(LPTSTR psrc, Array<String> &out)
        we need to preserve compatibility.
     */
 
-    LPTSTR pStart = psrc;
+    LPWSTR pStart = psrc;
     bool skipQuote = false;
 
     // Pairs of double-quotes vanish...
@@ -526,7 +558,7 @@ Array<String> __get_args()
    #ifdef HX_WINRT
    // Do nothing
    #elif defined(HX_WINDOWS)
-   LPTSTR str =  GetCommandLine();
+   LPWSTR str =  GetCommandLineW();
    ParseCommandLine(str, result);
    #else
    #ifdef __APPLE__
@@ -583,6 +615,7 @@ void __hxcpp_println_string(const String &inV)
 {
    hx::strbuf convertBuf;
    PRINTF("%s\n", inV.out_str(&convertBuf));
+   fflush(stdout);
 }
 
 
@@ -616,48 +649,41 @@ int __int__(double x)
 }
 
 
+static inline bool is_hex_string(const char *c, int len)
+{
+   return (len > 2 && c[0] == '0' && (c[1] == 'x' || c[1] == 'X'))
+      || (len > 3 && (c[0] == '-' || c[0] == '+') && c[1] == '0' && (c[2] == 'x' || c[2] == 'X'));
+}
+
 Dynamic __hxcpp_parse_int(const String &inString)
 {
    if (!inString.raw_ptr())
       return null();
-   long result;
    hx::strbuf buf;
    const char *str = inString.utf8_str(&buf);
-   bool hex =  (str[0]=='0' && (str[1]=='x' || str[1]=='X'));
-   char *end = 0;
 
-   if (hex)
-      result = (long)strtoul(str+2,&end,16);
-   else
+   // On the first non space char check to see if we've got a hex string
+   while (isspace(*str)) ++str;
+   bool isHex = is_hex_string(str, strlen(str));
+   char *end = 0;
+   long result;
+   if (isHex)
+   {
+      bool neg = str[0] == '-';
+      if (neg) str++;
+      result = strtoul(str,&end,16);
+      if (neg) result = -result;
+   }
+   else 
       result = strtol(str,&end,10);
+   #ifdef HX_WINDOWS
+   if (str==end && !isHex)
+   #else
    if (str==end)
+   #endif
       return null();
    return (int)result;
 }
-
-
-int __hxcpp_parse_substr_int(const String &inString,int inStart, int inLen)
-{
-   if (!inString.raw_ptr())
-      return 0;
-   if (inLen<0)
-      inLen = inString.length - inStart;
-   long result;
-   hx::strbuf buf;
-   const char *str = inString.ascii_substr(&buf,inStart,inLen);
-   bool hex =  (str[0]=='0' && (str[1]=='x' || str[1]=='X'));
-   char *end = 0;
-
-   if (hex)
-      result = (long)strtoul(str+2,&end,16);
-   else
-      result = strtol(str,&end,10);
-   if (str==end)
-      return 0;
-   return (int)result;
-}
-
-
 
 
 double __hxcpp_parse_substr_float(const String &inString,int start, int length)
