@@ -29,6 +29,7 @@
   <flag value="-Wno-trigraphs"/>
   <flag value="-fno-stack-protector"/>
   <flag value="-Wno-overflow" />
+  <flag value="-Wno-inconsistent-missing-override"/>
   <cppflag value="-Wno-invalid-offsetof" />
   <cppflag value="-Wno-return-type-c-linkage" />
   <mmflag value="-Wno-return-type-c-linkage" />

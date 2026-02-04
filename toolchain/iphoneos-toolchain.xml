@@ -51,6 +51,7 @@
   <flag value="-Wno-unused-value" />
   <flag value="-Wno-overflow" />
   <flag value="-Wno-trigraphs"/>
+  <flag value="-Wno-inconsistent-missing-override"/>
   <cppflag value="-Wno-invalid-offsetof" />
   <cppflag value="-Wno-return-type-c-linkage" />
   <mmflag value="-Wno-return-type-c-linkage" />
