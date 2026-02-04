@@ -39,31 +39,31 @@
 <set name="STD_MODULE_LINK" value="exe" if="HXCPP_JS_PRIME"/>
 
 
-
-<set name="LIBEXTRA" value=".iphonesim-64" if="iphonesim"/>
-<set name="LIBEXTRA" value=".iphonesim" if="iphonesim" unless="HXCPP_M64"/>
-<section if="iphoneos">
-	<set name="LIBEXTRA" value=".iphoneos-v7" if="HXCPP_ARMV7"/>
-	<set name="LIBEXTRA" value=".iphoneos-v7s" if="HXCPP_ARMV7S"/>
-	<set name="LIBEXTRA" value=".iphoneos-64" if="HXCPP_ARM64"/>
-	<set name="HXCPP_ARMV6" value="1" unless="LIBEXTRA"/>
-	<set name="LIBEXTRA" value=".iphoneos" if = "HXCPP_ARMV6"/>
+<section if="iphonesim||iphoneos||appletvsim||appletvos||watchsimulator||watchos">
+   <set name="DEVICEEXTRA" value=".iphonesim" if="iphonesim" />
+   <set name="DEVICEEXTRA" value=".iphoneos" if="iphoneos" />
+   <set name="DEVICEEXTRA" value=".appletvsim" if="appletvsim" />
+   <set name="DEVICEEXTRA" value=".appletvos" if="appletvos" />
+   <set name="DEVICEEXTRA" value=".watchsimulator" if="watchsimulator" />
+   <set name="DEVICEEXTRA" value=".watchos" if="watchos" />
+   <set name="LIBEXTRA" value="${DEVICEEXTRA}-x86" if="HXCPP_X86" />
+   <set name="LIBEXTRA" value="${DEVICEEXTRA}-x86_64" if="HXCPP_X86_64" />
+   <set name="LIBEXTRA" value="${DEVICEEXTRA}-armv6" if="HXCPP_ARMV6" />
+   <set name="LIBEXTRA" value="${DEVICEEXTRA}-armv7" if="HXCPP_ARMV7" />
+   <set name="LIBEXTRA" value="${DEVICEEXTRA}-armv7s" if="HXCPP_ARMV7S" />
+   <set name="LIBEXTRA" value="${DEVICEEXTRA}-arm64" if="HXCPP_ARM64" />
+   <unset name="DEVICEEXTRA" />
 </section>
-<set name="LIBEXTRA" value=".appletvsim-64" if="appletvsim"/>
-<set name="LIBEXTRA" value=".appletvsim" if="appletvsim" unless="HXCPP_M64"/>
-<set name="LIBEXTRA" value=".watchos" if="watchos" />
-<set name="LIBEXTRA" value=".watchsimulator" if="watchsimulator" />
-<section if="appletvos">
-   <set name="LIBEXTRA" value=".appletvos-64" if="HXCPP_ARM64"/>
+<section unless="LIBEXTRA">
+   <set name="LIBEXTRA" value="-x86" if="blackberry"/>
+   <set name="LIBEXTRA" value="" if="blackberry" unless="simulator" />
+   <set name="LIBEXTRA" value="-x86" if="HXCPP_X86" />
+   <set name="LIBEXTRA" value="-x86_64" if="HXCPP_X86_64" />
+   <set name="LIBEXTRA" value="-v7" if="HXCPP_ARMV7" unless="LIBEXTRA||linux" />
+   <set name="LIBEXTRA" value="-64" if="HXCPP_ARM64" unless="LIBEXTRA||linux||isMsvc||macos" />
+   <set name="LIBEXTRA" value="-x86" if="tizen"/>
+   <set name="LIBEXTRA" value="" if="tizen" unless="simulator" />
 </section>
-<set name="LIBEXTRA" value="-x86" if="blackberry"/>
-<set name="LIBEXTRA" value="" if="blackberry" unless="simulator" />
-<set name="LIBEXTRA" value="-x86" if="HXCPP_X86" />
-<set name="LIBEXTRA" value="-x86_64" if="HXCPP_X86_64" />
-<set name="LIBEXTRA" value="-v7" if="HXCPP_ARMV7" unless="LIBEXTRA||linux" />
-<set name="LIBEXTRA" value="-64" if="HXCPP_ARM64" unless="LIBEXTRA||linux||isMsvc||macos" />
-<set name="LIBEXTRA" value="-x86" if="tizen"/>
-<set name="LIBEXTRA" value="" if="tizen" unless="simulator" />
 <set name="LIBEXT" value=".a" />
 <set name="LIBEXT" value=".lib" if="windows" unless="mingw" />
 
