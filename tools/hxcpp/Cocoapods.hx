@@ -84,10 +84,10 @@ class Cocoapods
       }
 
       var expectedArchitecture = "";
-      if      (defines.exists("HXCPP_ARM64")) expectedArchitecture = "arm64";
-      else if (defines.exists("HXCPP_ARMV7")) expectedArchitecture = "armv7";
-      else if (defines.exists("HXCPP_M64"))   expectedArchitecture = "x86_64";
-      else                                    expectedArchitecture = "i386";
+      if      (defines.exists("HXCPP_ARM64"))  expectedArchitecture = "arm64";
+      else if (defines.exists("HXCPP_ARMV7"))  expectedArchitecture = "armv7";
+      else if (defines.exists("HXCPP_X86_64")) expectedArchitecture = "x86_64";
+      else                                     expectedArchitecture = "i386";
 
       for(dict in availableLibraries.elements)
       {

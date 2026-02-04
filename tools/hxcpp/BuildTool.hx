@@ -135,8 +135,8 @@ class BuildTool
 
       instance = this;
 
-      m64 = mDefines.exists("HXCPP_M64");
-      m32 = mDefines.exists("HXCPP_M32");
+      m64 = mDefines.exists("HXCPP_M64") || mDefines.exists("HXCPP_X86_64");
+      m32 = mDefines.exists("HXCPP_M32") || mDefines.exists("HXCPP_X86");
       arm64 = mDefines.exists("HXCPP_ARM64");
       var otherArmArchitecture = mDefines.exists("HXCPP_ARMV6") || mDefines.exists("HXCPP_ARMV7") || mDefines.exists("HXCPP_ARMV7S");
       if (m64==m32 && !arm64 && !otherArmArchitecture)

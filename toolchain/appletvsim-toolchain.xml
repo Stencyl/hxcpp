@@ -2,7 +2,7 @@
 
 <echo value="Using tvOS SDK ${TVOS_VER}" if="VERBOSE"/>
 
-<set name="ARCH" value ="-64" if="HXCPP_X86_64" />
+<set name="ARCH" value ="-x86_64" if="HXCPP_X86_64" />
 <set name="ARCH" value ="-arm64" if="HXCPP_ARM64" />
 
 <set name="HXCPP_USE_LIBTOOL" value="1" />
@@ -76,7 +76,7 @@
   <exe name="xcrun --sdk appletvsimulator${TVOS_VER} clang++" />
   <flag value="-dynamiclib"/>
   <flag value="-arch"/>
-  <flag value="i386" unless="HXCPP_M64"/>
+  <flag value="i386" if="HXCPP_X86"/>
   <flag value="x86_64" if="HXCPP_X86_64"/>
   <flag value="arm64" if="HXCPP_ARM64"/>
   <flag value="-isysroot"/>
