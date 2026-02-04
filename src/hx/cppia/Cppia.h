@@ -575,6 +575,9 @@ struct CppiaVar
 
 
 
+#if (HXCPP_API_LEVEL >= 500)
+# define NATIVE_CLASS_OVERRIDES_MARKED
+#endif
 
 class HaxeNativeClass
 {
@@ -596,6 +599,10 @@ public:
    static HaxeNativeClass *findClass(const std::string &inName);
    static HaxeNativeClass *hxObject();
    static void link();
+#ifndef NATIVE_CLASS_OVERRIDES_MARKED
+private:
+   void addVtableEntries( std::vector<std::string> &outVtable, hx::UnorderedSet<std::string> &outMethodsSet);
+#endif
 };
 
 class HaxeNativeInterface
@@ -853,6 +860,15 @@ inline T &runValue(T& outValue, CppiaCtx *ctx, CppiaExpr *expr)
    expr->runVoid(ctx);
    return null();
 }
+
+#if (HXCPP_API_LEVEL>=500)
+template<typename... TArgs>
+inline hx::Callable<void(TArgs...)>& runValue(hx::Callable<void(TArgs...)>& outValue, CppiaCtx* ctx, CppiaExpr* expr)
+{
+   expr->runVoid(ctx);
+   return outValue = hx::Callable<void(TArgs...)>();
+}
+#endif
 
 template<> inline int &runValue(int& outValue, CppiaCtx *ctx, CppiaExpr *expr)
 {
