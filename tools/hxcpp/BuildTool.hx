@@ -2178,7 +2178,7 @@ class BuildTool
          {
             var best="0.0";
             var files = FileSystem.readDirectory(dev_path);
-            var extract_version = ~/^iPhoneOS(.*).sdk$/;
+            var extract_version = ~/^iPhoneOS(.+).sdk$/;
             for(file in files)
             {
                if (extract_version.match(file))
@@ -2200,7 +2200,7 @@ class BuildTool
          {
             var best="0.0";
             var files = FileSystem.readDirectory(dev_path);
-            var extract_version = ~/^AppleTVOS(.*).sdk$/;
+            var extract_version = ~/^AppleTVOS(.+).sdk$/;
             for(file in files)
             {
                if (extract_version.match(file))
@@ -2223,7 +2223,7 @@ class BuildTool
          {
             var best="0.0";
             var files = FileSystem.readDirectory(dev_path);
-            var extract_version = ~/^WatchOS(.*).sdk$/;
+            var extract_version = ~/^WatchOS(.+).sdk$/;
             for(file in files)
             {
                if (extract_version.match(file))
@@ -2246,7 +2246,7 @@ class BuildTool
          {
             var best="0.0";
             var files = FileSystem.readDirectory(dev_path);
-            var extract_version = ~/^MacOSX(.*).sdk$/;
+            var extract_version = ~/^MacOSX(.+).sdk$/;
             for(file in files)
             {
                if (extract_version.match(file))
