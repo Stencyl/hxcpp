@@ -21,6 +21,7 @@ class Log
    public static var quiet:Bool = false;
    public static var verbose:Bool = false;
    public static var showSetup:Bool = false;
+   public static var annotateThreads:Bool = false;
 
    public  static var colorSupported:Null<Bool> = null;
    private static var sentWarnings = new Map<String,Bool>();

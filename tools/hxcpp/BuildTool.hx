@@ -404,6 +404,10 @@ class BuildTool
       {
          sReportedThreads = sCompileThreadCount;
          Log.setup('${Log.YELLOW}Using compile threads: $sCompileThreadCount${Log.NORMAL}' );
+         if(Log.annotateThreads)
+         {
+            Log.info('THREAD-COUNT: $sCompileThreadCount');
+         }
       }
 
       return sCompileThreadCount;
@@ -651,12 +655,17 @@ class BuildTool
                groupMutex.release();
             }
          } : null;
-
+         
+         if(to_be_compiled.length > 0)
+         {
          Profile.push("compile");
 
-         var compile_progress = null;
-         if (!Log.verbose)
-            compile_progress = new Progress(0,to_be_compiled.length);
+         if(!Log.quiet && Log.verbose && to_be_compiled.length > 0)
+         {
+            Log.info("\x1b[33;1mCompiling group: " + group.mId + " (" + to_be_compiled.length + " file" + (to_be_compiled.length==1 ? "" : "s") + ")\x1b[0m");
+         }
+         
+         var compile_progress = new Progress(0,to_be_compiled.length);
 
          if (threadPool==null)
          {
@@ -674,7 +683,15 @@ class BuildTool
                   {
                      var index = threadPool.getNextIndex();
                      if (index<0)
+                     {
+                        if(Log.annotateThreads)
+                        {
+                           Compiler.printMutex.acquire();
+                           Log.info('THREAD-$threadId-END');
+                           Compiler.printMutex.release();
+                        }
                         break;
+                     }
                      var file = to_be_compiled[index];
 
                      compiler.compile(file,threadId,groupHeader,pchStamp,compile_progress);
@@ -682,7 +699,12 @@ class BuildTool
             });
          }
          Profile.pop();
-
+         }
+         else if(Log.verbose)
+         {
+            Log.info("Skipping group: " + group.mId);
+         }
+         
          if (CompileCache.hasCache && group.mAsLibrary && mLinkers.exists("static_link"))
          {
             Profile.push("link libs");
@@ -1601,6 +1623,7 @@ class BuildTool
          Log.colorSupported = false;
       Log.verbose = defines.exists("HXCPP_VERBOSE");
       Log.showSetup = defines.exists("HXCPP_LOG_SETUP");
+      Log.annotateThreads = defines.get("HXCPP_ANNOTATE_THREADS") == "1";
       exitOnThreadError = defines.exists("HXCPP_EXIT_ON_ERROR");
 
 

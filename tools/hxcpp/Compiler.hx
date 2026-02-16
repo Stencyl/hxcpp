@@ -453,7 +453,7 @@ class Compiler
          if (delayedFilename!=null)
            args.push(delayedFilename);
 
-         if (!Log.verbose)
+         //if (!Log.verbose)
          {
             var tagInfo = inFile.mTags==null ? "" : " " + inFile.mTags.split(",");
 
@@ -475,6 +475,10 @@ class Compiler
             {
                inProgess.progress(1);
                fileName = inProgess.getProgress() + fileName;
+            }
+            if(inTid >= 0 && Log.annotateThreads)
+            {
+               fileName = 'THREAD-$inTid-JOB: $fileName';
             }
 
             if((inTid >= 0 && BuildTool.threadExitCode == 0) || inTid < 0)
@@ -515,6 +519,15 @@ class Compiler
          {
             Log.info("", " caching " + cacheName);
             sys.io.File.copy(obj_name, cacheName);
+         }
+      }
+      else
+      {
+         if (inProgess != null)
+         {
+            printMutex.acquire();
+            inProgess.progress(1);
+            printMutex.release();
          }
       }
 
