@@ -491,14 +491,20 @@ class BuildTool
          var inList = new Array<Bool>();
          var groupIsOutOfDate = mDirtyList.indexOf(group.mId)>=0 || mDirtyList.indexOf("all")>=0;
 
+         var sortedFiles = Lambda.array(group.mFiles);
+         sortedFiles.sort((file1, file2) -> {
+            if (file1.mName < file2.mName) return -1;
+            if (file1.mName > file2.mName) return 1;
+            return 0;
+         });
+
          if (useCache)
          {
             Profile.push("compute hash");
             if (useCache && group.hasFiles() && threadPool!=null)
             {
                Log.initMultiThreaded();
-               var names:Array<String> = Lambda.array(Lambda.map(group.mFiles, function(file:File) {return file.mName; }));
-               threadPool.setArrayCount( names.length );
+               threadPool.setArrayCount( sortedFiles.length );
                threadPool.runJob( function(tid) {
                   var localCache = new Map<String,String>();
 
@@ -508,20 +514,19 @@ class BuildTool
                      if (id<0)
                         break;
 
-                     group.mFiles.get(names[id]).computeDependHash(localCache);
+                     sortedFiles[id].computeDependHash(localCache);
                   }
                } );
             }
             else
             {
-               for(file in group.mFiles)
+               for(file in sortedFiles)
                   file.computeDependHash(null);
             }
             Profile.pop();
          }
-
-
-         for(file in group.mFiles)
+         
+         for(file in sortedFiles)
          {
             var obj_name = mCompiler.getCachedObjName(file);
             groupObjs.push(obj_name);
@@ -548,7 +553,7 @@ class BuildTool
                groupObjs.push(obj);
 
                /*
-               for(i in 0...group.mFiles.length)
+               for(i in 0...sortedFiles.length)
                {
                   var obj_name = groupObjs[i];
                   if (!inList[i])
@@ -563,7 +568,7 @@ class BuildTool
                   }
                   else
                   {
-                        trace(' Listed $obj_name  ' + group.mFiles[i].mName);
+                        trace(' Listed $obj_name  ' + sortedFiles[i].mName);
                   }
                }
                */
