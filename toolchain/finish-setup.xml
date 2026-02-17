@@ -3,8 +3,12 @@
 <set name="DBG" value="-debug" if="debug" unless="DEBUGSUFFIX" />
 <set name="DBG" value="${DEBUGSUFFIX}" if="debug" unless="DBG" />
 
-<set name="M64" value="64" if="HXCPP_M64"/>
-<set name="M64" value="arm64" if="HXCPP_ARM64"/>
+<set name="MARCH" value="-x86" if="HXCPP_X86"/>
+<set name="MARCH" value="-x86_64" if="HXCPP_X86_64"/>
+<set name="MARCH" value="-armv5" if="HXCPP_ARMV5"/>
+<set name="MARCH" value="-armv6" if="HXCPP_ARMV6"/>
+<set name="MARCH" value="-armv7" if="HXCPP_ARMV7"/>
+<set name="MARCH" value="-arm64" if="HXCPP_ARM64"/>
 <set name="F32" value="-f32" if="HXCPP_FLOAT32"/>
 <set name="NEEDS_NC" value="-nc" if="windows"/>
 <set name="NOCONSOLE" value="${NEEDS_NC}" if="no_console"/>
@@ -33,7 +37,7 @@
 <set name="HXCPP_OPTIMIZE_LINK_INCREMENTAL" value="1" if="HXCPP_FAST_LINK HXCPP_OPTIMIZE_LINK" unless="debug" />
 <set name="OBJOPT" value="-opt" if="HXCPP_OPTIMIZE_LINK" unless="debug" />
 <set name="OBJOPT" value="-optinc" if="HXCPP_OPTIMIZE_LINK_INCREMENTAL" unless="debug" />
-<set name="OBJEXT" value="${M64}${F32}${STAT}${OBJDBG}${OBJOPT}${NOCONSOLE}${RPI}${APIFP}${PRIME}" />
+<set name="OBJEXT" value="${MARCH}${F32}${STAT}${OBJDBG}${OBJOPT}${NOCONSOLE}${RPI}${APIFP}${PRIME}" />
 
 <set name="STD_MODULE_LINK" value="static_link" if="static_link"/>
 <set name="STD_MODULE_LINK" value="exe" if="HXCPP_JS_PRIME"/>
@@ -110,7 +114,7 @@
       <unset name="HXCPP_OPTIMIZE_LINK_INCREMENTAL"/>
       <set name="HXCPP_OPTIMIZE_LINK" value="1"/> 
       <set name="OBJOPT" value="-opt" if="HXCPP_OPTIMIZE_LINK || HXCPP_OPTIMIZE_LINK_INCREMENTAL" unless="debug" />
-      <set name="OBJEXT" value="${M64}${F32}${STAT}${OBJDBG}${OBJOPT}${NOCONSOLE}${RPI}${APIFP}${PRIME}" />
+      <set name="OBJEXT" value="${MARCH}${F32}${STAT}${OBJDBG}${OBJOPT}${NOCONSOLE}${RPI}${APIFP}${PRIME}" />
    </section>
 </section>
 </xml>
