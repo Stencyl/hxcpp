@@ -416,8 +416,6 @@ class BuildTool
    public static function setThreadError(inCode:Int)
    {
       threadExitCode = inCode;
-      if (exitOnThreadError)
-         Tools.exit(inCode);
    }
 
    public function buildTarget(inTarget:String, inDestination:String)

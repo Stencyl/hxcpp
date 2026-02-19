@@ -499,6 +499,7 @@ class Compiler
                   if (FileSystem.exists(obj_name))
                      FileSystem.deleteFile(obj_name);
                   BuildTool.setThreadError(err);
+                  return null;
                }
             }
          }
