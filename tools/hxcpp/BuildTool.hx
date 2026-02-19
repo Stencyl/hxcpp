@@ -721,7 +721,7 @@ class BuildTool
             var libName = targetDir + "/" + mCompiler.getTargetPrefix() + "_" + group.getCacheProject();
 
             var libTarget = new Target(libName, "linker", "static_link" );
-            linker.link(libTarget,groupObjs, mCompiler, [] );
+            linker.link(libTarget,groupObjs, mCompiler, [], false );
             target.mAutoLibs.push(linker.mLastOutName);
             // Linux the libraries must be added again if the references were not resolved the firs time
             if (group.mAddTwice)
@@ -767,28 +767,20 @@ class BuildTool
             var manifest = mDefines.get("manifestFile");
             if (manifest!=null)
                extraDeps.push(manifest);
+               
+            var debugLinkAndStrip =
+                  mStripper!=null &&
+                  (target.mToolID=="exe" || target.mToolID=="dll") &&
+                  mDefines.exists("HXCPP_DEBUG_LINK_AND_STRIP");
 
             var linker = mLinkers.get(target.mToolID);
-            var output = linker.link(target,objs, mCompiler, extraDeps);
+            var output = linker.link(target,objs, mCompiler, extraDeps, debugLinkAndStrip);
 
             if (output!="")
             {
-               if (mStripper!=null)
+               if (debugLinkAndStrip)
                {
-                  if (target.mToolID=="exe" || target.mToolID=="dll")
-                  {
-                     if ( mDefines.exists("HXCPP_DEBUG_LINK_AND_STRIP") )
-                     {
-                        var unstripped = linker.getUnstrippedFilename(mCompiler.mObjDir,target);
-                        //var unstripped = mCompiler.mObjDir + "/" + linker.getSimpleFilename(target);
-                        Log.v("Save unstripped to " + unstripped);
-
-                        var chmod = isWindows ? false : target.mToolID=="exe";
-                        CopyFile.copyFile(output, unstripped, false, Overwrite.ALWAYS, chmod);
-                     }
-
-                     mStripper.strip(output);
-                  }
+                  mStripper.strip(output);
                }
 
                if (manifest!=null && (target.mToolID=="exe" || target.mToolID=="dll") )

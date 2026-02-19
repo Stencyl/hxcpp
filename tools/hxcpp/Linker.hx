@@ -77,7 +77,7 @@ class Linker
       return inObjDir + "/" + getSimpleFilename(inTarget);
    }
 
-   public function link(inTarget:Target,inObjs:Array<String>,inCompiler:Compiler,extraDeps:Array<String> )
+   public function link(inTarget:Target,inObjs:Array<String>,inCompiler:Compiler,extraDeps:Array<String>,debugLinkAndStrip:Bool )
    {
       var ext = inTarget.getExt(mExt);
       var file_name = mNamePrefix + inTarget.mOutput + ext;
@@ -188,8 +188,15 @@ class Linker
          }
 
       }
+      
+      var full_out_name = out_name;
+      
+      if (debugLinkAndStrip)
+      {
+         full_out_name = getUnstrippedFilename(inCompiler.mObjDir, inTarget);
+      }
 
-      if (isOutOfDateLibs || isOutOfDate(out_name,inObjs) || isOutOfDate(out_name,inTarget.mDepends) || isOutOfDate(out_name,extraDeps) )
+      if (isOutOfDateLibs || isOutOfDate(full_out_name,inObjs) || isOutOfDate(full_out_name,inTarget.mDepends) || isOutOfDate(full_out_name,extraDeps) )
       {
          var args = new Array<String>();
          var out = mOutFlag;
@@ -207,12 +214,12 @@ class Linker
          }
          else
          {
-            if (mRecreate && FileSystem.exists(out_name))
+            if (mRecreate && FileSystem.exists(full_out_name))
             {
-               Log.info("\x1b[1mClean: \x1b[0m" + out_name);
-               FileSystem.deleteFile(out_name);
+               Log.info("\x1b[1mClean: \x1b[0m" + full_out_name);
+               FileSystem.deleteFile(full_out_name);
             }
-            args.push(out + out_name);
+            args.push(out + full_out_name);
          }
 
          args = args.concat(mFlags).concat(inTarget.mFlags);
@@ -291,7 +298,7 @@ class Linker
 
          args = args.concat(libs);
 
-         var lib_name = mLibDir!="" ? mLibDir+"/"+file_name : out_name;
+         var lib_name = mLibDir!="" ? mLibDir+"/"+file_name : full_out_name;
          var result = ProcessManager.runCommand("", mExe, args, true, true, false,
              "\x1b[1mLink: \x1b[0m" + lib_name);
          if (result!=0)
@@ -316,6 +323,14 @@ class Linker
             Log.info("\x1b[1mMove file: \x1b[0m" + mLibDir+"/"+file_name + " to " + out_name);
             sys.io.File.copy( mLibDir+"/"+file_name, out_name );
             FileSystem.deleteFile( mLibDir+"/"+file_name );
+         }
+         
+         if(debugLinkAndStrip)
+         {
+            Log.v("Save unstripped to " + full_out_name);
+
+            var chmod = BuildTool.isWindows ? false : inTarget.mToolID=="exe";
+            CopyFile.copyFile(full_out_name, out_name, false, CopyFile.Overwrite.ALWAYS, chmod);
          }
 
          sys.io.File.saveContent(hashFile,md5);
