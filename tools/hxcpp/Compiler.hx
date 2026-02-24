@@ -699,9 +699,10 @@ class Compiler
       }
 
       Log.info("Creating " + pch_name + "...", " - Precompile " + pch_name );
-      var result = ProcessManager.runCommand("", mExe, args);
+      var result = ProcessManager.runProcessThreaded(mExe, args);
       if (result!=0)
       {
+         /*
          var goes = 10;
          for(attempt in 0...goes)
          {
@@ -718,7 +719,8 @@ class Compiler
             }
          }
          Log.error("Could not create PCH");
-         //throw "Error creating pch: " + result + " - build cancelled";
+         */
+         throw "Error creating pch: " + result + " - build cancelled";
       }
 
       if (mPCH == "msvc")

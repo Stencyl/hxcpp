@@ -483,11 +483,11 @@ class ProcessManager
             }
             if (output.length > 0)
             {
-               message += output.join("\n") + "\n";
+               message += "> " + output.join("\n> ") + "\n";
             }
             if (errOut != null)
             {
-               message += errOut.join("\n") + '${Log.NORMAL}';
+               message += "> " + errOut.join("\n> ") + '${Log.NORMAL}';
             }
             Log.error(message,"",null,false);
             Log.unlock();
