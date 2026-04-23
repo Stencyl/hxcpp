@@ -7,7 +7,7 @@
 #include <hx/Thread.h>
 #include <hx/OS.h>
 #include <hx/QuickVec.h>
-#include <mutex>
+
 
 // Newer versions of haxe compiler will set these too (or might be null for haxe 3.0)
 static const char **__all_files_fullpath = 0;
@@ -84,7 +84,7 @@ static void read_memory_barrier()
 const char *_hx_dbg_find_scriptable_class_name(String className);
 
 
-static std::mutex gMutex;
+static HxMutex gMutex;
 static std::map<int, DebuggerContext *> gMap;
 static std::list<DebuggerContext *> gList;
 
@@ -106,7 +106,7 @@ public:
 
    // Waiting for continue
    bool         mWaiting;
-   std::mutex   mWaitMutex;
+   HxMutex      mWaitMutex;
    HxSemaphore  mWaitSemaphore;
    int          mContinueCount;
    bool         mAttached;
@@ -130,10 +130,10 @@ public:
       mStackContext = inStack;
       mThreadNumber = mStackContext->mThreadId;
       mStatus = DBG_STATUS_RUNNING;
-      gMutex.lock();
+      gMutex.Lock();
       gList.push_back(this);
       gMap[mThreadNumber] = this;
-      gMutex.unlock();
+      gMutex.Unlock();
 
       // Note that there is a race condition here.  If the debugger is
       // "detaching" at this exact moment, it might set the event handler to
@@ -152,11 +152,11 @@ public:
    void detach()
    {
       mAttached = false;
-      gMutex.lock();
+      gMutex.Lock();
       gList.remove(this);
       gMap.erase(mThreadNumber);
       mBreakpoints = ReleaseBreakpointsLocked(mBreakpoints);
-      gMutex.unlock();
+      gMutex.Unlock();
       reset();
 
       Dynamic handler = hx::g_eventNotificationHandler;
@@ -200,7 +200,7 @@ public:
         // to hold the lock during the entire process as this could block
         // threads from actually evaluating breakpoints.
         std::vector<int> threadNumbers;
-        gMutex.lock();
+        gMutex.Lock();
         std::list<DebuggerContext *>::iterator iter = gList.begin();
         while (iter != gList.end()) {
             DebuggerContext *stack = *iter++;
@@ -209,7 +209,7 @@ public:
             }
             threadNumbers.push_back(stack->mThreadNumber);
         }
-        gMutex.unlock();
+        gMutex.Unlock();
 
         // Now wait no longer than 2 seconds total for all threads to
         // be stopped.  If any thread times out, then stop immediately.
@@ -222,20 +222,20 @@ public:
         HxSemaphore timeoutSem;
         int i = 0;
         while (i < size) {
-            gMutex.lock();
+            gMutex.Lock();
             DebuggerContext *stack = gMap[threadNumbers[i]];
             if (!stack) {
                 // The thread went away while we were working!
-                gMutex.unlock();
+                gMutex.Unlock();
                 i += 1;
                 continue;
             }
             if (stack->mWaiting) {
-                gMutex.unlock();
+                gMutex.Unlock();
                 i += 1;
                 continue;
             }
-            gMutex.unlock();
+            gMutex.Unlock();
             if (timeSlicesLeft == 0) {
                 // The 2 seconds have expired, give up
                 return;
@@ -258,7 +258,7 @@ public:
             count = 1;
         }
 
-        mWaitMutex.lock();
+        mWaitMutex.Lock();
 
         if (mWaiting) {
             mWaiting = false;
@@ -266,7 +266,7 @@ public:
             mWaitSemaphore.Set();
         }
 
-        mWaitMutex.unlock();
+        mWaitMutex.Unlock();
     }
 
 
@@ -282,9 +282,9 @@ public:
         // This thread cannot stop while making the callback
         mCanStop = false;
 
-        mWaitMutex.lock();
+        mWaitMutex.Lock();
         mWaiting = true;
-        mWaitMutex.unlock();
+        mWaitMutex.Unlock();
 
         // Call the handler to announce the status.
         StackFrame *frame = mStackContext->getCurrentStackFrame();
@@ -299,17 +299,17 @@ public:
         {
            // Wait until the debugger thread sets mWaiting to false and signals
            // the semaphore
-           mWaitMutex.lock();
+           mWaitMutex.Lock();
 
            while (mWaiting) {
-               mWaitMutex.unlock();
+               mWaitMutex.Unlock();
                hx::EnterGCFreeZone();
                mWaitSemaphore.Wait();
                hx::ExitGCFreeZone();
-               mWaitMutex.lock();
+               mWaitMutex.Lock();
            }
 
-           mWaitMutex.unlock();
+           mWaitMutex.Unlock();
         }
 
         // Save the breakpoint status in the call stack so that queries for
@@ -380,7 +380,7 @@ public:
             return -1;
         }
 
-        gMutex.lock();
+        gMutex.Lock();
 
         int ret = gNextBreakpointNumber++;
         
@@ -398,7 +398,7 @@ public:
         // gShouldCallHandleBreakpoints update before gBreakpoints has updated
         gShouldCallHandleBreakpoints = true;
 
-        gMutex.unlock();
+        gMutex.Unlock();
 
         return ret;
     }
@@ -418,7 +418,7 @@ public:
             return -1;
         }
         
-        gMutex.lock();
+        gMutex.Lock();
 
         int ret = gNextBreakpointNumber++;
         
@@ -436,14 +436,14 @@ public:
         // gShouldCallHandleBreakpoints update before gBreakpoints has updated
         gShouldCallHandleBreakpoints = true;
 
-        gMutex.unlock();
+        gMutex.Unlock();
 
         return ret;
     }
 
     static void DeleteAll()
     {
-        gMutex.lock();
+        gMutex.Lock();
         
         Breakpoints *newBreakpoints = new Breakpoints();
 
@@ -459,12 +459,12 @@ public:
         // gShouldCallHandleBreakpoints update before gStepType has updated
         gShouldCallHandleBreakpoints = (gStepType != STEP_NONE) || (sExecutionTrace==exeTraceLines);
 
-        gMutex.unlock();
+        gMutex.Unlock();
     }
 
     static void Delete(int number)
     {
-        gMutex.lock();
+        gMutex.Lock();
         
         if (gBreakpoints->HasBreakpoint(number)) {
             // Replace mBreakpoints with a copy and remove the breakpoint
@@ -489,7 +489,7 @@ public:
             }
         }
 
-        gMutex.unlock();
+        gMutex.Unlock();
     }
 
     static void BreakNow(bool wait)
@@ -515,7 +515,7 @@ public:
 
         gShouldCallHandleBreakpoints = !gBreakpoints->IsEmpty() || (sExecutionTrace==exeTraceLines);
 
-        gMutex.lock();
+        gMutex.Lock();
 
         // All threads get continued, but specialThreadNumber only for count
         std::list<DebuggerContext *>::iterator iter = gList.begin();
@@ -529,7 +529,7 @@ public:
             }
         }
 
-        gMutex.unlock();
+        gMutex.Unlock();
     }
 
     static void StepThread(int threadNumber, StepType stepType, int stepCount)
@@ -539,7 +539,7 @@ public:
         gStepType = stepType;
         gStepCount = stepCount;
         
-        gMutex.lock();
+        gMutex.Lock();
 
         std::list<DebuggerContext *>::iterator iter = gList.begin();
         while (iter != gList.end()) {
@@ -550,7 +550,7 @@ public:
                 break;
             }
         }
-        gMutex.unlock();
+        gMutex.Unlock();
 
     }
 
@@ -603,7 +603,7 @@ public:
             // If the current thread has never gotten a reference to
             // breakpoints, get a reference to the current breakpoints
             if (!breakpoints) {
-                gMutex.lock();
+                gMutex.Lock();
                 // Get break points and ref it
                 breakpoints = gBreakpoints;
                 // This read memory barrier ensures that old values within
@@ -612,7 +612,7 @@ public:
                 read_memory_barrier();
                 stack->mDebugger->mBreakpoints = breakpoints;
                 breakpoints->AddRef();
-                gMutex.unlock();
+                gMutex.Unlock();
             }
             // Else if the current thread's breakpoints number is out of date,
             // release the reference on that and get the new breakpoints.
@@ -621,7 +621,7 @@ public:
             // until it "sees" a newer gBreakpoints.  Without memory barriers,
             // this could theoretically be indefinitely.
             else if (breakpoints != gBreakpoints) {
-                gMutex.lock();
+                gMutex.Lock();
                 // Release ref on current break points
                 breakpoints->RemoveRef();
                 // Get new break points and ref it
@@ -632,7 +632,7 @@ public:
                 read_memory_barrier();
                 stack->mDebugger->mBreakpoints = breakpoints;
                 breakpoints->AddRef();
-                gMutex.unlock();
+                gMutex.Unlock();
             }
 
             // If there are breakpoints, then may need to break in one
@@ -968,11 +968,11 @@ static Dynamic GetThreadInfo(int threadNumber, bool unsafe)
 
     DebuggerContext *stack = 0;
 
-    gMutex.lock();
+    gMutex.Lock();
 
     if (gMap.count(threadNumber) == 0)
     {
-        gMutex.unlock();
+        gMutex.Unlock();
         return null();
     }
     else
@@ -980,7 +980,7 @@ static Dynamic GetThreadInfo(int threadNumber, bool unsafe)
 
     if ((stack->mStatus == DBG_STATUS_RUNNING) && !unsafe)
     {
-        gMutex.unlock();
+        gMutex.Unlock();
         return null();
     }
 
@@ -988,7 +988,7 @@ static Dynamic GetThreadInfo(int threadNumber, bool unsafe)
     // converted is either for a thread that is not running (and thus
     // the stack cannot be altered while the conversion is in progress),
     // or unsafe mode has been invoked
-    gMutex.unlock();
+    gMutex.Unlock();
 
 
     Dynamic ret = g_newThreadInfoFunction
@@ -1018,7 +1018,7 @@ static Dynamic GetThreadInfo(int threadNumber, bool unsafe)
 // Gets a ThreadInfo for each Thread
 static ::Array<Dynamic> GetThreadInfos()
 {
-    gMutex.lock();
+    gMutex.Lock();
 
     // Latch the current thread numbers from the current list of call
     // stacks.
@@ -1029,7 +1029,7 @@ static ::Array<Dynamic> GetThreadInfos()
         threadNumbers.push_back(stack->mThreadNumber);
     }
     
-    gMutex.unlock();
+    gMutex.Unlock();
 
     ::Array<Dynamic> ret = Array_obj<Dynamic>::__new();
 
@@ -1052,7 +1052,7 @@ static ::Array<Dynamic> GetStackVariables(int threadNumber,
 {
     ::Array<Dynamic> ret = Array_obj<Dynamic>::__new();
 
-    gMutex.lock();
+    gMutex.Lock();
 
     std::list<DebuggerContext *>::iterator iter = gList.begin();
     while (iter != gList.end()) {
@@ -1060,7 +1060,7 @@ static ::Array<Dynamic> GetStackVariables(int threadNumber,
         if (ctx->mThreadNumber == threadNumber) {
             if ((ctx->mStatus == DBG_STATUS_RUNNING) && !unsafe) {
                 ret->push(markThreadNotStopped);
-                gMutex.unlock();
+                gMutex.Unlock();
                 return ret;
             }
             StackContext *stack = ctx->mStackContext;
@@ -1084,7 +1084,7 @@ static ::Array<Dynamic> GetStackVariables(int threadNumber,
         }
     }
 
-    gMutex.unlock();
+    gMutex.Unlock();
 
     return ret;
 }
@@ -1100,10 +1100,10 @@ static Dynamic GetVariableValue(int threadNumber, int stackFrameNumber,
 
     DebuggerContext *ctx;
 
-    gMutex.lock();
+    gMutex.Lock();
 
     if (gMap.count(threadNumber) == 0) {
-        gMutex.unlock();
+        gMutex.Unlock();
         return markNonexistent;
     }
     else {
@@ -1111,12 +1111,12 @@ static Dynamic GetVariableValue(int threadNumber, int stackFrameNumber,
     }
 
     if ((ctx->mStatus == DBG_STATUS_RUNNING) && !unsafe) {
-        gMutex.unlock();
+        gMutex.Unlock();
         return markThreadNotStopped;
     }
 
     // Don't need the lock any more, the thread is not running
-    gMutex.unlock();
+    gMutex.Unlock();
 
     StackContext *stack = ctx->mStackContext;
 
@@ -1163,10 +1163,10 @@ static Dynamic SetVariableValue(int threadNumber, int stackFrameNumber,
 
     DebuggerContext *ctx;
 
-    gMutex.lock();
+    gMutex.Lock();
 
     if (gMap.count(threadNumber) == 0) {
-        gMutex.unlock();
+        gMutex.Unlock();
         return null();
     }
     else {
@@ -1174,12 +1174,12 @@ static Dynamic SetVariableValue(int threadNumber, int stackFrameNumber,
     }
 
     if ((ctx->mStatus == DBG_STATUS_RUNNING) && !unsafe) {
-        gMutex.unlock();
+        gMutex.Unlock();
         return markThreadNotStopped;
     }
 
     // Don't need the lock any more, the thread is not running
-    gMutex.unlock();
+    gMutex.Unlock();
 
     StackContext *stack = ctx->mStackContext;
     // Check to ensure that the stack frame is valid

@@ -34,18 +34,13 @@ class TestGC extends Test {
       return clearStack(count-1);
    }
 
-   // NOTE : previously the objects below were created in the same thread as the assertions and the clear
-   // stack function above attempted to remove references to it so it was eligable for collection.
-   // With the callable changes it seems clang can do some more aggressive optimisations which broke these tests,
-   // so now the objects are created on a separate thread and we sleep for 1s to give time for the threads to exit and unregister from the GC.
 
 	function createAbc():Void {
 		var object = { test: "abc" };
 		Gc.doNotKill(object);
 	}
 	public function testObject():Void {
-		sys.thread.Thread.create(createAbc);
-		Sys.sleep(1);
+		create(createAbc);
 		var zombie:Dynamic = gc();
 		Assert.notNull(zombie);
 		Assert.equals("abc", zombie.test);
@@ -73,8 +68,7 @@ class TestGC extends Test {
 		Gc.doNotKill(object);
 	};
 	public function testFunc():Void {
-		sys.thread.Thread.create(createFunction);
-		Sys.sleep(1);
+		create(createFunction);
 		var zombie:Dynamic = gc();
 		Assert.notNull(zombie);
 		Assert.equals("abc", zombie());
@@ -86,8 +80,7 @@ class TestGC extends Test {
 		Gc.doNotKill(object);
 	};
 	public function testCustomObject():Void {
-		sys.thread.Thread.create(createCustom);
-		Sys.sleep(1);
+		create(createCustom);
 		var zombie = gc();
 		Assert.notNull(zombie);
 		Assert.isOfType(zombie, CustomObject);
@@ -99,8 +92,7 @@ class TestGC extends Test {
 		Gc.doNotKill(object);
 	};
 	public function testBytes():Void {
-		sys.thread.Thread.create(createBytes);
-		Sys.sleep(1);
+		create(createBytes);
 		var zombie = gc();
 		Assert.notNull(zombie);
 		Assert.isOfType(zombie, Bytes);

@@ -30,7 +30,6 @@ typedef int64_t __int64;
 #include <stdio.h>
 #include <time.h>
 #include <clocale>
-#include <mutex>
 
 
 #ifdef HX_ANDROID
@@ -741,12 +740,6 @@ struct VarArgFunc : public hx::Object
      HX_OBJ_WB_NEW_MARKED_OBJECT(this)
    }
 
-#if (HXCPP_API_LEVEL>=500)
-   VarArgFunc(::hx::Callable<::Dynamic(::cpp::VirtualArray)>& inFunc) : mRealFunc(inFunc) {
-       HX_OBJ_WB_NEW_MARKED_OBJECT(this)
-   }
-#endif
-
    int __GetType() const { return vtFunction; }
    ::String __ToString() const { return mRealFunc->__ToString() ; }
 
@@ -759,22 +752,15 @@ struct VarArgFunc : public hx::Object
    void *__GetHandle() const { return mRealFunc.GetPtr(); }
    Dynamic __Run(const Array<Dynamic> &inArgs)
    {
-#if (HXCPP_API_LEVEL>=500)
-       return hx::invoker::invoke(mRealFunc.mPtr, inArgs);
-#else
-       return mRealFunc->__run(inArgs);
-#endif
+      return mRealFunc->__run(inArgs);
    }
 
    Dynamic mRealFunc;
 };
 
 }
-#if (HXCPP_API_LEVEL>=500)
-Dynamic __hxcpp_create_var_args(::hx::Callable<::Dynamic(::cpp::VirtualArray)>& inArrayFunc)
-#else
+
 Dynamic __hxcpp_create_var_args(Dynamic &inArrayFunc)
-#endif
 {
    return Dynamic(new hx::VarArgFunc(inArrayFunc));
 }
@@ -786,7 +772,7 @@ Dynamic __hxcpp_create_var_args(Dynamic &inArrayFunc)
 
 
 
-static std::mutex sgFieldMapMutex;
+static HxMutex sgFieldMapMutex;
 
 typedef std::map<std::string,int> StringToField;
 
@@ -810,7 +796,7 @@ const String &__hxcpp_field_from_id( int f )
 
 int  __hxcpp_field_to_id( const char *inFieldName )
 {
-   std::lock_guard<std::mutex> lock(sgFieldMapMutex);
+   AutoLock lock(sgFieldMapMutex);
 
    if (!sgFieldToStringAlloc)
    {
