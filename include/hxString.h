@@ -148,10 +148,8 @@ public:
 
    ::String toString() { return *this; }
 
-
     ::String __URLEncode() const;
     ::String __URLDecode() const;
-
 
 
     ::String toUpperCase() const;

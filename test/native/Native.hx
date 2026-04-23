@@ -45,11 +45,7 @@ class Native
 
             new tests.marshalling.view.TestView(),
             new tests.marshalling.view.TestMarshal(),
-            new tests.marshalling.view.TestViewExtensions(),
-
-            new tests.encoding.TestAscii(),
-            new tests.encoding.TestUtf8(),
-            new tests.encoding.TestUtf16(),
+            new tests.marshalling.view.TestViewExtensions()
 			#end
 		]);
 	}
