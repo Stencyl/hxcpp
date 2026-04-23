@@ -30,7 +30,6 @@ typedef int64_t __int64;
 #include <stdio.h>
 #include <time.h>
 #include <clocale>
-#include <mutex>
 
 
 #ifdef HX_ANDROID
@@ -786,7 +785,7 @@ Dynamic __hxcpp_create_var_args(Dynamic &inArrayFunc)
 
 
 
-static std::mutex sgFieldMapMutex;
+static HxMutex sgFieldMapMutex;
 
 typedef std::map<std::string,int> StringToField;
 
@@ -810,7 +809,7 @@ const String &__hxcpp_field_from_id( int f )
 
 int  __hxcpp_field_to_id( const char *inFieldName )
 {
-   std::lock_guard<std::mutex> lock(sgFieldMapMutex);
+   AutoLock lock(sgFieldMapMutex);
 
    if (!sgFieldToStringAlloc)
    {

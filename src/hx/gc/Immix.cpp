@@ -6,8 +6,6 @@
 #include "../Hash.h"
 #include "GcRegCapture.h"
 #include <hx/Unordered.h>
-#include <mutex>
-#include <condition_variable>
 
 #ifdef EMSCRIPTEN
    #include <emscripten/stack.h>
@@ -394,8 +392,8 @@ static int sgTimeToNextTableUpdate = 1;
 
 
 
-std::mutex *gThreadStateChangeLock=nullptr;
-std::mutex *gSpecialObjectLock=nullptr;
+HxMutex  *gThreadStateChangeLock=0;
+HxMutex  *gSpecialObjectLock=0;
 
 class LocalAllocator;
 enum LocalAllocState { lasNew, lasRunning, lasStopped, lasWaiting, lasTerminal };
@@ -572,7 +570,24 @@ enum AllocType { allocNone, allocString, allocObject, allocMarked };
 struct BlockDataInfo *gBlockStack = 0;
 typedef hx::QuickVec<hx::Object *> ObjectStack;
 
-static std::mutex sThreadPoolLock;
+
+typedef HxMutex ThreadPoolLock;
+
+static ThreadPoolLock sThreadPoolLock;
+
+#if !defined(HX_WINDOWS) && !defined(EMSCRIPTEN) && \
+   !defined(__SNC__) && !defined(__ORBIS__)
+#define HX_GC_PTHREADS
+typedef pthread_cond_t ThreadPoolSignal;
+inline void WaitThreadLocked(ThreadPoolSignal &ioSignal)
+{
+   pthread_cond_wait(&ioSignal, sThreadPoolLock.mMutex);
+}
+#else
+typedef HxSemaphore ThreadPoolSignal;
+#endif
+
+typedef TAutoLock<ThreadPoolLock> ThreadPoolAutoLock;
 
 // For threaded marking/block reclaiming
 static unsigned int sRunningThreads = 0;
@@ -599,16 +614,20 @@ static bool sgThreadPoolAbort = false;
 
 // Pthreads enters the sleep state while holding a mutex, so it no cost to update
 //  the sleeping state and thereby avoid over-signalling the condition
-bool                         sThreadSleeping[MAX_GC_THREADS];
-std::condition_variable_any* sThreadWake[MAX_GC_THREADS];
-bool                         sThreadJobDoneSleeping = false;
-std::condition_variable_any* sThreadJobDone;
+bool             sThreadSleeping[MAX_GC_THREADS];
+ThreadPoolSignal sThreadWake[MAX_GC_THREADS];
+bool             sThreadJobDoneSleeping = false;
+ThreadPoolSignal sThreadJobDone;
 
 
-static inline void SignalThreadPool(std::condition_variable_any* ioSignal, bool sThreadSleeping)
+static inline void SignalThreadPool(ThreadPoolSignal &ioSignal, bool sThreadSleeping)
 {
-    if (sThreadSleeping)
-        ioSignal->notify_one();
+   #ifdef HX_GC_PTHREADS
+   if (sThreadSleeping)
+      pthread_cond_signal(&ioSignal);
+   #else
+   ioSignal.Set();
+   #endif
 }
 
 static void wakeThreadLocked(int inThreadId)
@@ -1536,7 +1555,7 @@ struct GlobalChunks
 
       if (MAX_GC_THREADS>1 && sLazyThreads)
       {
-         std::lock_guard<std::mutex> l(sThreadPoolLock);
+         ThreadPoolAutoLock l(sThreadPoolLock);
 
          #ifdef PROFILE_THREAD_USAGE
            #define CHECK_THREAD_WAKE(tid) \
@@ -1710,7 +1729,7 @@ struct GlobalChunks
                      return result;
                }
             }
-            std::lock_guard<std::mutex> l(sThreadPoolLock);
+            ThreadPoolAutoLock l(sThreadPoolLock);
             completeThreadLocked(inThreadId);
          }
          return result;
@@ -2367,7 +2386,7 @@ void MarkStringArray(String *inPtr, int inLength, hx::MarkContext *__inCtx)
 
 // --- Roots -------------------------------
 
-FILE_SCOPE std::mutex* sGCRootLock = nullptr;
+FILE_SCOPE HxMutex *sGCRootLock = 0;
 typedef hx::UnorderedSet<hx::Object **> RootSet;
 static RootSet sgRootSet;
 
@@ -2376,20 +2395,20 @@ static OffsetRootSet *sgOffsetRootSet=0;
 
 void GCAddRoot(hx::Object **inRoot)
 {
-   std::lock_guard<std::mutex> lock(*sGCRootLock);
+   AutoLock lock(*sGCRootLock);
    sgRootSet.insert(inRoot);
 }
 
 void GCRemoveRoot(hx::Object **inRoot)
 {
-   std::lock_guard<std::mutex> lock(*sGCRootLock);
+   AutoLock lock(*sGCRootLock);
    sgRootSet.erase(inRoot);
 }
 
 
 void GcAddOffsetRoot(void *inRoot, int inOffset)
 {
-   std::lock_guard<std::mutex> lock(*sGCRootLock);
+   AutoLock lock(*sGCRootLock);
    if (!sgOffsetRootSet)
       sgOffsetRootSet = new OffsetRootSet();
    (*sgOffsetRootSet)[inRoot] = inOffset;
@@ -2397,13 +2416,13 @@ void GcAddOffsetRoot(void *inRoot, int inOffset)
 
 void GcSetOffsetRoot(void *inRoot, int inOffset)
 {
-   std::lock_guard<std::mutex> lock(*sGCRootLock);
+   AutoLock lock(*sGCRootLock);
    (*sgOffsetRootSet)[inRoot] = inOffset;
 }
 
 void GcRemoveOffsetRoot(void *inRoot)
 {
-   std::lock_guard<std::mutex> lock(*sGCRootLock);
+   AutoLock lock(*sGCRootLock);
    OffsetRootSet::iterator r = sgOffsetRootSet->find(inRoot);
    sgOffsetRootSet->erase(r);
 }
@@ -2417,7 +2436,7 @@ void GcRemoveOffsetRoot(void *inRoot)
 class WeakRef;
 typedef hx::QuickVec<WeakRef *> WeakRefs;
 
-FILE_SCOPE std::mutex *sFinalizerLock = 0;
+FILE_SCOPE HxMutex *sFinalizerLock = 0;
 FILE_SCOPE WeakRefs sWeakRefs;
 
 class WeakRef : public hx::Object
@@ -2430,8 +2449,9 @@ public:
       mRef = inRef;
       if (mRef.mPtr)
       {
-         std::lock_guard<std::mutex> lock(*sFinalizerLock);
+         sFinalizerLock->Lock();
          sWeakRefs.push(this);
+         sFinalizerLock->Unlock();
       }
    }
 
@@ -2480,7 +2500,7 @@ InternalFinalizer::InternalFinalizer(hx::Object *inObj, finalizer inFinalizer)
    mFinalizer = inFinalizer;
 
    // Ensure this survives generational collect
-   std::lock_guard<std::mutex> lock(*gSpecialObjectLock);
+   AutoLock lock(*gSpecialObjectLock);
    sgFinalizers->push(this);
 }
 
@@ -2777,7 +2797,7 @@ void  GCSetFinalizer( hx::Object *obj, hx::finalizer f )
    if (((unsigned int *)obj)[-1] & HX_GC_CONST_ALLOC_BIT)
       throw Dynamic(HX_CSTRING("set_finalizer - invalid const object"));
 
-   std::lock_guard<std::mutex> lock(*gSpecialObjectLock);
+   AutoLock lock(*gSpecialObjectLock);
    if (f==0)
    {
       FinalizerMap::iterator i = sFinalizerMap.find(obj);
@@ -2797,7 +2817,7 @@ void  GCSetHaxeFinalizer( hx::Object *obj, HaxeFinalizer f )
    if (((unsigned int *)obj)[-1] & HX_GC_CONST_ALLOC_BIT)
       throw Dynamic(HX_CSTRING("set_finalizer - invalid const object"));
 
-   std::lock_guard<std::mutex> lock(*gSpecialObjectLock);
+   AutoLock lock(*gSpecialObjectLock);
    if (f==0)
    {
       HaxeFinalizerMap::iterator i = sHaxeFinalizerMap.find(obj);
@@ -2815,13 +2835,13 @@ void GCDoNotKill(hx::Object *inObj)
    if (((unsigned int *)inObj)[-1] & HX_GC_CONST_ALLOC_BIT)
       throw Dynamic(HX_CSTRING("doNotKill - invalid const object"));
 
-   std::lock_guard<std::mutex> lock(*gSpecialObjectLock);
+   AutoLock lock(*gSpecialObjectLock);
    sMakeZombieSet.insert(inObj);
 }
 
 hx::Object *GCGetNextZombie()
 {
-   std::lock_guard<std::mutex> lock(*gSpecialObjectLock);
+   AutoLock lock(*gSpecialObjectLock);
    if (sZombieList.empty())
       return 0;
    hx::Object *result = sZombieList.pop();
@@ -2830,13 +2850,13 @@ hx::Object *GCGetNextZombie()
 
 void RegisterWeakHash(HashBase<String> *inHash)
 {
-   std::lock_guard<std::mutex> lock(*gSpecialObjectLock);
+   AutoLock lock(*gSpecialObjectLock);
    sWeakHashList.push(inHash);
 }
 
 void RegisterWeakHash(HashBase<Dynamic> *inHash)
 {
-   std::lock_guard<std::mutex> lock(*gSpecialObjectLock);
+   AutoLock lock(*gSpecialObjectLock);
    sWeakHashList.push(inHash);
 }
 
@@ -3133,12 +3153,12 @@ public:
    {
       if (!gThreadStateChangeLock)
       {
-         gThreadStateChangeLock = new std::mutex();
-         gSpecialObjectLock = new std::mutex();
+         gThreadStateChangeLock = new HxMutex();
+         gSpecialObjectLock = new HxMutex();
       }
       // Until we add ourselves, the collector will not wait
       //  on us - ie, we are assumed ot be in a GC free zone.
-      std::lock_guard<std::mutex> lock(*gThreadStateChangeLock);
+      AutoLock lock(*gThreadStateChangeLock);
       mLocalAllocs.push(inAlloc);
       // TODO Attach debugger
    }
@@ -3161,7 +3181,7 @@ public:
 
    LocalAllocator *GetPooledAllocator()
    {
-      std::lock_guard<std::mutex> lock(*gThreadStateChangeLock);
+      AutoLock lock(*gThreadStateChangeLock);
       for(int p=0;p<LOCAL_POOL_SIZE;p++)
       {
          if (mLocalPool[p])
@@ -3196,19 +3216,19 @@ public:
       {
          unsigned int *blob = ((unsigned int *)inLarge) - 2;
          unsigned int size = *blob;
-         mLargeListLock.lock();
+         mLargeListLock.Lock();
          mLargeAllocated -= size;
          // Could somehow keep it in the list, but mark as recycled?
          mLargeList.qerase_val(blob);
          // We could maybe free anyhow?
          if (!largeObjectRecycle.hasExtraCapacity(1))
          {
-            mLargeListLock.unlock();
+            mLargeListLock.Unlock();
             HxFree(blob);
             return;
          }
          largeObjectRecycle.push(blob);
-         mLargeListLock.unlock();
+         mLargeListLock.Unlock();
       }
    }
 
@@ -3249,7 +3269,7 @@ public:
             {
                if (do_lock && !isLocked)
                {
-                  mLargeListLock.lock();
+                  mLargeListLock.Lock();
                   isLocked = true;
                   if (  i>=largeObjectRecycle.size() || largeObjectRecycle[i][0] != inSize )
                      continue;
@@ -3275,7 +3295,7 @@ public:
 
          if (isLocked)
          {
-            mLargeListLock.unlock();
+            mLargeListLock.Unlock();
             isLocked = false;
          }
 
@@ -3300,13 +3320,13 @@ public:
       #endif
 
       if (do_lock && !isLocked)
-         mLargeListLock.lock();
+         mLargeListLock.Lock();
 
       mLargeList.push(result);
       mLargeAllocated += inSize;
 
       if (do_lock)
-         mLargeListLock.unlock();
+         mLargeListLock.Unlock();
 
 #ifdef HXCPP_TELEMETRY
       __hxt_gc_alloc(result + 2, inSize);
@@ -3343,12 +3363,12 @@ public:
       #endif
 
       if (do_lock)
-         mLargeListLock.lock();
+         mLargeListLock.Lock();
 
       mLargeAllocated += inDelta;
 
       if (do_lock)
-         mLargeListLock.unlock();
+         mLargeListLock.Unlock();
    }
 
    // Gets a block with the 'zeroLock' acquired, which means the zeroing thread
@@ -3594,7 +3614,7 @@ public:
 
          #ifndef HXCPP_SINGLE_THREADED_APP
          hx::EnterGCFreeZone();
-         gThreadStateChangeLock->lock();
+         gThreadStateChangeLock->Lock();
          hx::ExitGCFreeZoneLocked();
 
          result = GetNextFree(inRequiredBytes);
@@ -3643,7 +3663,7 @@ public:
          mCurrentRowsInUse += result->GetFreeRows();
 
          #ifndef HXCPP_SINGLE_THREADED_APP
-         gThreadStateChangeLock->unlock();
+         gThreadStateChangeLock->Unlock();
          #endif
 
 
@@ -4194,7 +4214,7 @@ public:
  
    void *GetIDObject(int inIndex)
    {
-      std::lock_guard<std::mutex> lock(*gSpecialObjectLock);
+      AutoLock lock(*gSpecialObjectLock);
       if (inIndex<0 || inIndex>hx::sIdObjectMap.size())
          return 0;
       return hx::sIdObjectMap[inIndex];
@@ -4202,7 +4222,7 @@ public:
 
    int GetObjectID(void * inPtr)
    {
-      std::lock_guard<std::mutex> lock(*gSpecialObjectLock);
+      AutoLock lock(*gSpecialObjectLock);
       hx::ObjectIdMap::iterator i = hx::sObjectIdMap.find( (hx::Object *)inPtr );
       if (i!=hx::sObjectIdMap.end())
          return i->second;
@@ -4421,7 +4441,7 @@ public:
          if (mZeroListQueue + mThreadJobId < mZeroList.size())
          {
             // Wake zeroing thread
-            std::lock_guard<std::mutex> l(sThreadPoolLock);
+            ThreadPoolAutoLock l(sThreadPoolLock);
             if (!(sRunningThreads & 0x01))
             {
                #ifdef PROFILE_THREAD_USAGE
@@ -4436,7 +4456,7 @@ public:
 
    void finishThreadJob(int inId)
    {
-      std::lock_guard<std::mutex> l(sThreadPoolLock);
+      ThreadPoolAutoLock l(sThreadPoolLock);
       if (sRunningThreads & (1<<inId))
       {
          sRunningThreads &= ~(1<<inId);
@@ -4454,15 +4474,22 @@ public:
 
    void waitForThreadWake(int inId)
    {
-        std::lock_guard<std::mutex> l(sThreadPoolLock);
-        int count = 0;
+      #ifdef HX_GC_PTHREADS
+      {
+         ThreadPoolAutoLock l(sThreadPoolLock);
+         int count = 0;
 
-        // May be woken multiple times if sRunningThreads is set to 0 then 1 before we sleep
-        sThreadSleeping[inId] = true;
-        // Spurious wake?
-        sThreadWake[inId]->wait(sThreadPoolLock, [&inId]() { return sRunningThreads & (1 << inId); });
-        
-        sThreadSleeping[inId] = false;
+         // May be woken multiple times if sRunningThreads is set to 0 then 1 before we sleep
+         sThreadSleeping[inId] = true;
+         // Spurious wake?
+         while( !(sRunningThreads & (1<<inId) ) )
+            WaitThreadLocked(sThreadWake[inId]);
+         sThreadSleeping[inId] = false;
+      }
+      #else
+      while( !(sRunningThreads & (1<<inId) ) )
+         sThreadWake[inId].Wait();
+      #endif
    }
 
 
@@ -4525,18 +4552,19 @@ public:
    {
       void *info = (void *)(size_t)inId;
 
-      #if defined(EMSCRIPTEN)
+      #ifdef HX_GC_PTHREADS
+         pthread_cond_init(&sThreadWake[inId],0);
+         sThreadSleeping[inId] = false;
+         if (inId==0)
+            pthread_cond_init(&sThreadJobDone,0);
+
+         pthread_t result = 0;
+         int created = pthread_create(&result,0,SThreadLoop,info);
+         bool ok = created==0;
+      #elif defined(EMSCRIPTEN)
          // Only one thread
       #else
-         sThreadWake[inId] = new std::condition_variable_any();
-         if (0 == inId)
-         {
-             sThreadJobDone = new std::condition_variable_any();
-         }
-
-         sThreadSleeping[inId] = false;
-
-         HxCreateDetachedThread(SThreadLoop, info);
+         bool ok = HxCreateDetachedThread(SThreadLoop, info);
       #endif
    }
 
@@ -4551,7 +4579,7 @@ public:
             sgThreadPoolAbort = true;
             if (sgThreadPoolJob==tpjAsyncZeroJit)
             {
-               std::lock_guard<std::mutex> l(sThreadPoolLock);
+               ThreadPoolAutoLock l(sThreadPoolLock);
                // Thread will be waiting, but not finished
                if (sRunningThreads & 0x1)
                {
@@ -4563,10 +4591,16 @@ public:
          }
 
 
-         std::lock_guard<std::mutex> l(sThreadPoolLock);
+         #ifdef HX_GC_PTHREADS
+         ThreadPoolAutoLock lock(sThreadPoolLock);
          sThreadJobDoneSleeping = true;
-         sThreadJobDone->wait(sThreadPoolLock, []() { return sRunningThreads == false; });
+         while(sRunningThreads)
+             WaitThreadLocked(sThreadJobDone);
          sThreadJobDoneSleeping = false;
+         #else
+         while(sRunningThreads)
+            sThreadJobDone.Wait();
+         #endif
          sgThreadPoolAbort = false;
          sAllThreads = 0;
          sgThreadPoolJob = tpjNone;
@@ -4589,7 +4623,10 @@ public:
             CreateWorker(i);
       }
 
-      std::lock_guard<std::mutex> l(sThreadPoolLock);
+      #ifdef HX_GC_PTHREADS
+      ThreadPoolAutoLock lock(sThreadPoolLock);
+      #endif
+
 
       sgThreadPoolJob = inJob;
 
@@ -4609,9 +4646,15 @@ public:
       if (inWait)
       {
          // Join the workers...
+         #ifdef HX_GC_PTHREADS
          sThreadJobDoneSleeping = true;
-         sThreadJobDone->wait(sThreadPoolLock, []() { return sRunningThreads == false; });
+         while(sRunningThreads)
+            WaitThreadLocked(sThreadJobDone);
          sThreadJobDoneSleeping = false;
+         #else
+         while(sRunningThreads)
+            sThreadJobDone.Wait();
+         #endif
 
          sAllThreads = 0;
          sgThreadPoolJob = tpjNone;
@@ -4821,12 +4864,12 @@ public:
       {
          if (inLocked)
          {
-            gThreadStateChangeLock->unlock();
+            gThreadStateChangeLock->Unlock();
 
             hx::PauseForCollect();
 
             hx::EnterGCFreeZone();
-            gThreadStateChangeLock->lock();
+            gThreadStateChangeLock->Lock();
             hx::ExitGCFreeZoneLocked();
          }
          else
@@ -4845,7 +4888,7 @@ public:
       this_local = (LocalAllocator *)(hx::ImmixAllocator *)hx::tlsStackContext;
 
       if (!inLocked)
-         gThreadStateChangeLock->lock();
+         gThreadStateChangeLock->Lock();
 
       for(int i=0;i<mLocalAllocs.size();i++)
          if (mLocalAllocs[i]!=this_local)
@@ -5363,7 +5406,7 @@ public:
          }
 
          if (!inLocked)
-            gThreadStateChangeLock->unlock();
+            gThreadStateChangeLock->Unlock();
       #else
         #ifdef HXCPP_SCRIPTABLE
         hx::gMainThreadContext->byteMarkId = hx::gByteMarkID;
@@ -5580,7 +5623,7 @@ public:
    volatile int mZeroListQueue;
 
    LargeList mLargeList;
-   std::mutex mLargeListLock;
+   HxMutex    mLargeListLock;
    hx::QuickVec<LocalAllocator *> mLocalAllocs;
    LocalAllocator *mLocalPool[LOCAL_POOL_SIZE];
    hx::QuickVec<unsigned int *> largeObjectRecycle;
@@ -5857,7 +5900,7 @@ public:
          EnterGCFreeZone();
       #endif
 
-      std::lock_guard<std::mutex> lock(*gThreadStateChangeLock);
+      AutoLock lock(*gThreadStateChangeLock);
 
       #ifdef HX_WINDOWS
       mID = 0;
@@ -6084,7 +6127,7 @@ public:
       if (!mGCFreeZone)
          CriticalGCError("GCFree Zone mismatch");
 
-      std::lock_guard<std::mutex> lock(*gThreadStateChangeLock);
+      AutoLock lock(*gThreadStateChangeLock);
       mReadyForCollect.Reset();
       mGCFreeZone = false;
       #endif
@@ -6560,8 +6603,8 @@ void InitAlloc()
    sgAllocInit = true;
    sGlobalAlloc = new GlobalAllocator();
    sgFinalizers = new FinalizerList();
-   sFinalizerLock = new std::mutex();
-   sGCRootLock = new std::mutex();
+   sFinalizerLock = new HxMutex();
+   sGCRootLock = new HxMutex();
    hx::Object tmp;
    void **stack = *(void ***)(&tmp);
    sgObject_root = stack[0];
@@ -6996,13 +7039,13 @@ void __hxcpp_set_finalizer(Dynamic inObj, void *inFunc)
 
 void __hxcpp_add_member_finalizer(hx::Object *inObject, _hx_member_finalizer f, bool inPin)
 {
-   std::lock_guard<std::mutex> lock(*gSpecialObjectLock);
+   AutoLock lock(*gSpecialObjectLock);
    hx::sFinalizableList.push( hx::Finalizable(inObject, f, inPin) );
 }
 
 void __hxcpp_add_alloc_finalizer(void *inAlloc, _hx_alloc_finalizer f, bool inPin)
 {
-   std::lock_guard<std::mutex> lock(*gSpecialObjectLock);
+   AutoLock lock(*gSpecialObjectLock);
    hx::sFinalizableList.push( hx::Finalizable(inAlloc, f, inPin) );
 }
 
