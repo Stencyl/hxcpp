@@ -56,13 +56,6 @@ class RunTests
 
    }
 
-   public static function marshalling()
-   {
-      setDir("marshalling");
-
-      command("haxe", [ "build.hxml" ]);
-      command("bin" + sep + "Main-debug", []);
-   }
 
    public static function debugger()
    {
