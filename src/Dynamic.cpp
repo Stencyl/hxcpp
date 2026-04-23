@@ -502,7 +502,6 @@ DYN_OP_ADD(unsigned short)
 DYN_OP_ADD(signed char)
 DYN_OP_ADD(unsigned char)
 DYN_OP_ADD(char16_t)
-DYN_OP_ADD(char32_t)
 DYN_OP_ADD(cpp::Int64)
 DYN_OP_ADD(cpp::UInt64)
 
