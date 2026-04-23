@@ -130,11 +130,6 @@ namespace hx
                     return wrapped(args...);
                 }
 
-                void* __GetHandle() const override
-                {
-                    return wrapped.GetPtr();
-                }
-
                 inline void __Mark(hx::MarkContext* __inCtx) override
                 {
                     HX_MARK_MEMBER(wrapped);
@@ -168,11 +163,6 @@ namespace hx
                     wrapped(args...);
 
                     return null();
-                }
-
-                void* __GetHandle() const override
-                {
-                    return wrapped.GetPtr();
                 }
 
                 inline void __Mark(hx::MarkContext* __inCtx) override
@@ -214,11 +204,6 @@ namespace hx
                         TReturn HX_LOCAL_RUN(TArgs... args) override
                         {
                             return wrapped(args...);
-                        }
-
-                        void* __GetHandle() const override
-                        {
-                            return wrapped.GetPtr();
                         }
 
                         inline void __Mark(hx::MarkContext* __inCtx) override
@@ -310,11 +295,6 @@ namespace hx
                     wrapped(args...);
                 }
 
-                void* __GetHandle() const override
-                {
-                    return wrapped.GetPtr();
-                }
-
                 inline void __Mark(hx::MarkContext* __inCtx) override
                 {
                     HX_MARK_MEMBER(wrapped);
@@ -354,11 +334,6 @@ namespace hx
                         void HX_LOCAL_RUN(TArgs... args) override
                         {
                             wrapped(args...);
-                        }
-
-                        void* __GetHandle() const override
-                        {
-                            return wrapped.GetPtr();
                         }
 
                         inline void __Mark(hx::MarkContext* __inCtx) override
