@@ -15,10 +15,7 @@ inline bool cpp::marshal::View<T>::tryCopyTo(const View<T>& destination) const
         return false;
     }
 
-    if (ptr.ptr + length < destination.ptr.ptr || destination.ptr.ptr + length < ptr.ptr)
-        std::memcpy(destination.ptr.ptr, ptr.ptr, sizeof(T) * length);
-    else
-        std::memmove(destination.ptr.ptr, ptr.ptr, sizeof(T) * length);
+    std::memcpy(destination.ptr.ptr, ptr.ptr, sizeof(T) * length);
 
     return true;
 }
